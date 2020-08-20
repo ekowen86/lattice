@@ -1,5 +1,5 @@
 //
-//  su3_5d.cpp
+//  su3_x.cpp
 //
 //  Created by Evan Owen on 10/19/18.
 //  Copyright © 2018 Evan Owen. All rights reserved.
@@ -8,18 +8,17 @@
 #include <iostream>
 #include <iomanip>
 #include <fstream>
-//#include <random>
 #include <cmath>
 #include <future>
-//#include <Eigen/Dense>
 #include <unsupported/Eigen/MatrixFunctions>
+
 #include "su3_x.hpp"
 
 using namespace std;
 
-// MARK: su3_site_5d
+// MARK: su3_x_site
 
-void su3_site_5d::init(su3_lattice_5d* lattice, vector<su3_site_5d>& lattice_sites, int s) {
+void su3_x_site::init(su3_x_lattice* lattice, vector<su3_x_site>& lattice_sites, int s) {
     this->lattice = lattice;
     
     lattice->update_i(s);
@@ -41,7 +40,7 @@ void su3_site_5d::init(su3_lattice_5d* lattice, vector<su3_site_5d>& lattice_sit
     }
 }
 
-su3_link su3_site_5d::make_unitary(const su3_link& g) {
+su3_link su3_x_site::make_unitary(const su3_link& g) {
     
     // create 3-vectors from two random rows
     // the third row is unused
@@ -70,7 +69,7 @@ su3_link su3_site_5d::make_unitary(const su3_link& g) {
     return U;
 }
 
-su3_link su3_site_5d::cayley_ham(const su3_link& Q) {
+su3_link su3_x_site::cayley_ham(const su3_link& Q) {
     // use cayley-hamilton algorithm to compute e^iQ
     // ref. Morningstar, Peardon, Phys. Rev. D 69, 054501 (2004)
     
@@ -110,7 +109,7 @@ su3_link su3_site_5d::cayley_ham(const su3_link& Q) {
     return f0 * su3_identity + f1 * Q + f2 * Q2;
 }
 
-bool su3_site_5d::lock() {
+bool su3_x_site::lock() {
     if (is_locked || forward[0]->is_locked || backward[0]->is_locked) {
         this_thread::sleep_for(chrono::milliseconds(10));
         return true;
@@ -121,28 +120,28 @@ bool su3_site_5d::lock() {
     return false;
 }
 
-void su3_site_5d::unlock() {
+void su3_x_site::unlock() {
     backward[0]->is_locked = false;
     forward[0]->is_locked = false;
     is_locked = false;
 }
 
-double su3_site_5d::rand_double(double min, double max) {
+double su3_x_site::rand_double(double min, double max) {
     std::uniform_real_distribution<double> dist(min, max);
     return dist(*gen);
 }
 
-int su3_site_5d::rand_int(int min, int max) {
+int su3_x_site::rand_int(int min, int max) {
     std::uniform_int_distribution<int> dist(min, max);
     return dist(*gen);
 }
 
-double su3_site_5d::rand_normal(double mean, double stdev) {
+double su3_x_site::rand_normal(double mean, double stdev) {
     std::normal_distribution<double> dist(mean, stdev);
     return dist(*gen);
 }
 
-void su3_site_5d::reset_links(bool cold) {
+void su3_x_site::reset_links(bool cold) {
     for (int d = 0; d < lattice->D; d++) set_link(d, cold ? su3_identity : create_link(true));
 
     // always set the link in the extra dimension to the identity
@@ -150,7 +149,7 @@ void su3_site_5d::reset_links(bool cold) {
     link_inverse[lattice->D] = su3_identity;
 }
 
-void su3_site_5d::copy_links(su3_site_5d* site) {
+void su3_x_site::copy_links(su3_x_site* site) {
     for (int d = 0; d < lattice->D; d++) {
         link[d] = su3_link(site->link[d]);
         link_inverse[d] = su3_link(site->link_inverse[d]);
@@ -161,7 +160,7 @@ void su3_site_5d::copy_links(su3_site_5d* site) {
     link_inverse[lattice->D] = su3_identity;
 }
 
-void su3_site_5d::set_link(int d, const su3_link& value) {
+void su3_x_site::set_link(int d, const su3_link& value) {
     // never change the link in the extra dimension
     if (d == lattice->D) return;
     
@@ -175,7 +174,7 @@ void su3_site_5d::set_link(int d, const su3_link& value) {
     link_inverse[d] = U.adjoint();
 }
 
-su2_link su3_site_5d::create_su2(bool random) {
+su2_link su3_x_site::create_su2(bool random) {
     
     double a, g;
     
@@ -210,7 +209,7 @@ su2_link su3_site_5d::create_su2(bool random) {
     return m;
 }
 
-su3_link su3_site_5d::create_link(bool random) {
+su3_link su3_x_site::create_link(bool random) {
     
     su3_link R = su3_identity;
     R.block<2,2>(0,0) = create_su2(random);
@@ -230,7 +229,7 @@ su3_link su3_site_5d::create_link(bool random) {
     return RST;
 }
 
-double su3_site_5d::action() {
+double su3_x_site::action() {
     // gauge action
     double S = 0.0;
     su3_link s;
@@ -246,7 +245,7 @@ double su3_site_5d::action() {
     return lattice->beta * S / 3.0;
 }
 
-double su3_site_5d::hamiltonian() {
+double su3_x_site::hamiltonian() {
     // wilson action (including extra dimension)
     double S = 0.0;
     su3_link s;
@@ -267,7 +266,7 @@ double su3_site_5d::hamiltonian() {
     return S;
 }
 
-void su3_site_5d::init_momenta() {
+void su3_x_site::init_momenta() {
     for (int d = 0; d < lattice->D; d++) {
         p_link[d] = su3_zero;
         for (int l = 0; l < 8; l++) p_link[d] += rand_normal() * lattice->lambda[l] * 0.5;
@@ -283,15 +282,15 @@ void su3_site_5d::init_momenta() {
     p_link[lattice->D] = su3_zero;
 }
 
-void su3_site_5d::hmc_step_p(double frac) {
+void su3_x_site::hmc_step_p(double frac) {
     for (int d = 0; d < lattice->D; d++) p_link[d] = p_link[d] - frac * lattice->dt * p_link_dot(d);
 }
 
-void su3_site_5d::hmc_step_link() {
+void su3_x_site::hmc_step_link() {
     for (int d = 0; d < lattice->D; d++) set_link(d, cayley_ham(lattice->dt * p_link[d]) * link[d]);
 }
 
-su3_link su3_site_5d::p_link_dot(int d1) {
+su3_link su3_x_site::p_link_dot(int d1) {
 
     su3_link A = staple(d1);
     su3_link U = link[d1];
@@ -301,7 +300,7 @@ su3_link su3_site_5d::p_link_dot(int d1) {
     return -I * lattice->beta * X / 12.0;
 }
 
-double su3_site_5d::plaq() {
+double su3_x_site::plaq() {
     // compute the average plaquette at this site
     double U = 0;
     su3_link u;
@@ -317,7 +316,7 @@ double su3_site_5d::plaq() {
     return U / lattice->D / (lattice->D - 1) * 2.0;
 }
 
-su3_link su3_site_5d::plaquette(int d1, int d2) {
+su3_link su3_x_site::plaquette(int d1, int d2) {
     // compute the plaquette in the d1,d2 direction
     su3_link u1, u2, u3, u4;
     u1 = link[d1];
@@ -327,7 +326,7 @@ su3_link su3_site_5d::plaquette(int d1, int d2) {
     return u1 * u2 * u3 * u4;
 }
 
-su3_link su3_site_5d::staple(int d1) {
+su3_link su3_x_site::staple(int d1) {
     // compute the sum of staples attached to the plaquette pointing in the d1 direction
     su3_link U = su3_zero;
     su3_link u;
@@ -368,7 +367,7 @@ su3_link su3_site_5d::staple(int d1) {
     return U;
 }
 
-su3_link su3_site_5d::cloverleaf(int d1, int d2) {
+su3_link su3_x_site::cloverleaf(int d1, int d2) {
     su3_link U = su3_identity;
     U *= link[d1];
     U *= forward[d1]->link[d2];
@@ -393,11 +392,11 @@ su3_link su3_site_5d::cloverleaf(int d1, int d2) {
     return U;
 }
 
-double su3_site_5d::wilson_loop(int a, int b) {
+double su3_x_site::wilson_loop(int a, int b) {
     // compute the average a x b wilson loop at this site
     double U = 0;
     su3_link u;
-    su3_site_5d* s = this;
+    su3_x_site* s = this;
     int x;
     for (int d1 = 0; d1 < lattice->D; d1++) {
         for (int d2 = d1 + 1; d2 < lattice->D; d2++) {
@@ -424,9 +423,9 @@ double su3_site_5d::wilson_loop(int a, int b) {
     return U / lattice->D / (lattice->D - 1) * 2.0;
 }
 
-double su3_site_5d::polyakov_loop(int r) {
+double su3_x_site::polyakov_loop(int r) {
     // compute the average product of polyakov loops at this site
-    su3_site_5d* s; // current site
+    su3_x_site* s; // current site
     int x; // step counter
     double U = 0.0; // sum of polyakov products
     int n = 0; // number of values in sum
@@ -468,10 +467,10 @@ double su3_site_5d::polyakov_loop(int r) {
     return U / double(n);
 }
 
-double su3_site_5d::correlator(int T) {
+double su3_x_site::correlator(int T) {
     // correlator of duration T
     su3_link u = su3_identity;
-    su3_site_5d* s = this;
+    su3_x_site* s = this;
     int x;
     for (x = 0; x < T; x++) {
         u *= s->link[0];
@@ -507,7 +506,7 @@ int levi_civita_4[] = {
     3,2,1,0,+1
 };
 
-double su3_site_5d::topological_charge() {
+double su3_x_site::topological_charge() {
 
     // symmetric plaquettes
     su3_link u1, u2, u3, u4;
@@ -648,19 +647,19 @@ double su3_site_5d::topological_charge() {
 //    return C.real();
 }
 
-double su3_site_5d::mag_U() {
+double su3_x_site::mag_U() {
     return this->link[0].trace().real() / 3;
 }
 
-double su3_site_5d::abs_U() {
+double su3_x_site::abs_U() {
     return abs(this->link[0].trace().real()) / 3;
 }
 
-double su3_site_5d::four_point(int T, int R) {
+double su3_x_site::four_point(int T, int R) {
     // four-point function of duration T and spacing R
     double U = 0;
     su3_link u;
-    su3_site_5d* s = this;
+    su3_x_site* s = this;
     int x;
     for (int d = 1; d < lattice->D; d++) { // d is the spacing direction
         u = su3_identity;
@@ -679,7 +678,7 @@ double su3_site_5d::four_point(int T, int R) {
     return U / (lattice->D - 1);
 }
 
-su3_link su3_site_5d::overrelax(su3_link g) {
+su3_link su3_x_site::overrelax(su3_link g) {
     
     // this function doesn't work in SU(3)
     
@@ -698,7 +697,7 @@ su3_link su3_site_5d::overrelax(su3_link g) {
     return make_unitary(gw);
 }
 
-void su3_site_5d::relax(bool coulomb) {
+void su3_x_site::relax(bool coulomb) {
     while (!lock()) {}
     su3_link g = make_unitary(su3_identity - sum_G(coulomb) * I / 4);
 //    g = overrelax(g);
@@ -711,19 +710,19 @@ void su3_site_5d::relax(bool coulomb) {
     unlock();
 }
 
-double su3_site_5d::sum_landau() {
+double su3_x_site::sum_landau() {
     double U = 0.0;
     for (int d = 0; d < lattice->D; d++) U += link[d].trace().real();
     return U / 3 / lattice->D;
 }
 
-double su3_site_5d::sum_coulomb() {
+double su3_x_site::sum_coulomb() {
     double U = 0.0;
     for (int d = 1; d < lattice->D; d++) U += link[d].trace().real();
     return U / 3 / (lattice->D - 1);
 }
 
-su3_link su3_site_5d::sum_G(bool coulomb) {
+su3_link su3_x_site::sum_G(bool coulomb) {
     su3_link G = su3_zero;
     for (int d = coulomb ? 1 : 0; d < lattice->D; d++) {
         G += (link[d] - link_inverse[d]) / 2 / I;
@@ -732,7 +731,7 @@ su3_link su3_site_5d::sum_G(bool coulomb) {
     return G;
 }
 
-double su3_site_5d::heat_bath() {
+double su3_x_site::heat_bath() {
     double accept = 0;
     while (lock());
     for (int d = 0; d < lattice->D; d++) accept += heat_bath_link(d);
@@ -740,7 +739,7 @@ double su3_site_5d::heat_bath() {
     return accept / lattice->D;
 }
 
-double su3_site_5d::heat_bath_link(int d1) {
+double su3_x_site::heat_bath_link(int d1) {
     su3_link old_link = link[d1];
     su3_link new_link = old_link * create_link(false);
 
@@ -786,13 +785,13 @@ double su3_site_5d::heat_bath_link(int d1) {
     return 0.0;
 }
 
-void su3_site_5d::cool() {
+void su3_x_site::cool() {
     lock();
     for (int d = 0; d < lattice->D; d++) cool_link(d);
     unlock();
 }
 
-void su3_site_5d::cool_link(int d1) {
+void su3_x_site::cool_link(int d1) {
     
     su3_link X = su3_zero;
     su3_link u1, u2, u3;
@@ -814,13 +813,13 @@ void su3_site_5d::cool_link(int d1) {
     set_link(d1, X);
 }
 
-void su3_site_5d::wilson_flow(su3_site_5d* target, double epsilon) {
+void su3_x_site::wilson_flow(su3_x_site* target, double epsilon) {
     lock();
     for (int d = 0; d < lattice->D; d++) wilson_flow_link(target, epsilon, d);
     unlock();
 }
 
-void su3_site_5d::wilson_flow_link(su3_site_5d* target, double epsilon, int d1) {
+void su3_x_site::wilson_flow_link(su3_x_site* target, double epsilon, int d1) {
     
     su3_link X = su3_zero;
     su3_link u1, u2, u3;
@@ -862,9 +861,9 @@ void su3_site_5d::wilson_flow_link(su3_site_5d* target, double epsilon, int d1) 
     target->set_link(d1, W3);
 }
 
-// MARK: su3_lattice_5d
+// MARK: su3_x_lattice
 
-su3_lattice_5d::su3_lattice_5d(int N, int T, int N5, int D, double beta, bool cold) {
+su3_x_lattice::su3_x_lattice(int N, int T, int N5, int D, double beta, bool cold) {
     this->N = N;
     this->T = T;
     this->N5 = N5;
@@ -880,7 +879,7 @@ su3_lattice_5d::su3_lattice_5d(int N, int T, int N5, int D, double beta, bool co
 
 }
 
-su3_lattice_5d::su3_lattice_5d(su3_lattice_5d* lattice) {
+su3_x_lattice::su3_x_lattice(su3_x_lattice* lattice) {
     this->N = lattice->N;
     this->T = lattice->T;
     this->N5 = lattice->N5;
@@ -895,10 +894,10 @@ su3_lattice_5d::su3_lattice_5d(su3_lattice_5d* lattice) {
     for (int s = 0; s < n_sites; s++) site[s].copy_links(&lattice->site[s]);
 }
 
-su3_lattice_5d::~su3_lattice_5d() {
+su3_x_lattice::~su3_x_lattice() {
 }
 
-void su3_lattice_5d::init() {
+void su3_x_lattice::init() {
     
     // initialize hmc and heat bath parameters
     z = 50;
@@ -944,35 +943,35 @@ void su3_lattice_5d::init() {
     }
 }
 
-double su3_lattice_5d::rand_double(double min, double max) {
+double su3_x_lattice::rand_double(double min, double max) {
     std::uniform_real_distribution<double> dist(min, max);
     return dist(gen[0]);
 }
 
-int su3_lattice_5d::rand_int(int min, int max) {
+int su3_x_lattice::rand_int(int min, int max) {
     std::uniform_int_distribution<int> dist(min, max);
     return dist(gen[0]);
 }
 
-double su3_lattice_5d::rand_normal(double mean, double stdev) {
+double su3_x_lattice::rand_normal(double mean, double stdev) {
     std::normal_distribution<double> dist(mean, stdev);
     return dist(gen[0]);
 }
 
-void su3_lattice_5d::update_i(int s) {
+void su3_x_lattice::update_i(int s) {
     i[0] = s / n_slice;
     for (int d = 1; d < D; d++) i[d] = s / ((int)pow(N, D - d - 1) * N5) % N;
     i[D] = s % N5;
 }
 
-int su3_lattice_5d::update_s() {
+int su3_x_lattice::update_s() {
     int s = 0;
     for (int d = 0; d < D; d++) s += i[d] * (int)pow(N, D - d - 1) * N5;
     s += i[D];
     return s;
 }
 
-void su3_lattice_5d::move(int d, int n) {
+void su3_x_lattice::move(int d, int n) {
     
     if (d == 0) {
         if (n > 0) {
@@ -995,26 +994,26 @@ void su3_lattice_5d::move(int d, int n) {
     }
 }
 
-double su3_lattice_5d::plaq(int n5) {
+double su3_x_lattice::plaq(int n5) {
     // compute the average plaquette of the lattice (normalized to 3)
     double S = 0;
     for (int s = n5; s < n_sites; s += N5) S += site[s].plaq();
     return S / double(n_sites_5) * 3.0;
 }
 
-double su3_lattice_5d::action(int n5) {
+double su3_x_lattice::action(int n5) {
     double S = 0;
     for (int s = n5; s < n_sites; s += N5) S += site[s].action();
     return S;
 }
 
-double async_wilson_loop(su3_site_5d* site, int n, int a, int b, int N5) {
+double async_wilson_loop(su3_x_site* site, int n, int a, int b, int N5) {
     double sum = 0.0;
     for (int s = 0; s < n; s += N5) sum += site[s].wilson_loop(a, b);
     return sum;
 }
 
-double su3_lattice_5d::wilson_loop(int a, int b, int n5) {
+double su3_x_lattice::wilson_loop(int a, int b, int n5) {
     // compute the average a x b wilson loop of the lattice
     double sum = 0;
     
@@ -1028,50 +1027,50 @@ double su3_lattice_5d::wilson_loop(int a, int b, int n5) {
     return sum / double(n_sites_5);
 }
 
-double su3_lattice_5d::polyakov_loop(int r, int n5) {
+double su3_x_lattice::polyakov_loop(int r, int n5) {
     // compute the average product of polyakov loops spaced r apart
     double sum = 0.0;    
     for (int s = n5; s < n_sites / T; s += N5) sum += site[s].polyakov_loop(r);
     return sum / double(n_sites_5 * T);
 }
 
-double su3_lattice_5d::correlator(int T, int n5) {
+double su3_x_lattice::correlator(int T, int n5) {
     // compute the average correlator of length T
     double sum = 0;
     for (int s = n5; s < n_sites; s += N5) sum += site[s].correlator(T);
     return sum / double(n_sites_5);
 }
 
-double su3_lattice_5d::four_point(int T, int R, int n5) {
+double su3_x_lattice::four_point(int T, int R, int n5) {
     // compute the average T x R 4-point function of the lattice
     double sum = 0;
     for (int s = n5; s < n_sites; s += N5) sum += site[s].four_point(T, R);
     return sum / double(n_sites_5);
 }
 
-double su3_lattice_5d::hamiltonian() {
+double su3_x_lattice::hamiltonian() {
     double H = 0;
     for (int s = 0; s < n_sites; s++) H += hmc_site[s].hamiltonian();
     return H;
 }
 
-void async_init_momenta(su3_site_5d* site, int n) {
+void async_init_momenta(su3_x_site* site, int n) {
     for (int s = 0; s < n; s++) site[s].init_momenta();
 }
 
-void async_hmc_step_p(su3_site_5d* site, int n, double frac) {
+void async_hmc_step_p(su3_x_site* site, int n, double frac) {
     for (int s = 0; s < n; s++) site[s].hmc_step_p(frac);
 }
 
-void async_hmc_step_link(su3_site_5d* site, int n) {
+void async_hmc_step_link(su3_x_site* site, int n) {
     for (int s = 0; s < n; s++) site[s].hmc_step_link();
 }
 
-double su3_lattice_5d::hmc(int n_sweeps, bool update_dt, bool no_metropolis) {
+void su3_x_lattice::hmc(int n_sweeps, bool update_dt, bool no_metropolis) {
     
     if (n_sweeps) {
         for (int i = 0; i < n_sweeps; i++) hmc(0, update_dt, no_metropolis);
-        return 0.0;
+        return;
     }
     
     // copy lattice sites
@@ -1158,11 +1157,9 @@ double su3_lattice_5d::hmc(int n_sweeps, bool update_dt, bool no_metropolis) {
         }
         cout << "accept_rate = " << accept_rate << ", dt = " << dt << ", plaq = " << plaq(n5_center) << endl;
     }
-
-    return 0.0;
 }
 
-double async_heat_bath(su3_site_5d* site, int n, int N5) {
+double async_heat_bath(su3_x_site* site, int n, int N5) {
     double accept = 0.0;
 
     // start at a random spot in the time slice to mitigate parallel effects
@@ -1174,7 +1171,7 @@ double async_heat_bath(su3_site_5d* site, int n, int N5) {
     return accept;
 }
 
-void su3_lattice_5d::heat_bath(int n_sweeps) {
+void su3_x_lattice::heat_bath(int n_sweeps) {
     
     if (n_sweeps) {
         for (int i = 0; i < n_sweeps; i++) heat_bath(0);
@@ -1201,11 +1198,11 @@ void su3_lattice_5d::heat_bath(int n_sweeps) {
     }
 }
 
-void async_cool(su3_site_5d* site, int n, int N5) {
+void async_cool(su3_x_site* site, int n, int N5) {
     for (int s = 0; s < n; s += N5) site[s].cool();
 }
 
-void su3_lattice_5d::cool(int n5, int n_sweeps) {
+void su3_x_lattice::cool(int n5, int n_sweeps) {
     
     if (n_sweeps) {
         for (int i = 0; i < n_sweeps; i++) cool(n5, 0);
@@ -1223,11 +1220,11 @@ void su3_lattice_5d::cool(int n5, int n_sweeps) {
     }
 }
 
-void async_wilson_flow(su3_site_5d* site, su3_site_5d* target, int n, int N5, double epsilon) {
+void async_wilson_flow(su3_x_site* site, su3_x_site* target, int n, int N5, double epsilon) {
     for (int s = 0; s < n; s += N5) site[s].wilson_flow(&target[s], epsilon);
 }
 
-void su3_lattice_5d::wilson_flow(int n5, double epsilon, int n_sweeps) {
+void su3_x_lattice::wilson_flow(int n5, double epsilon, int n_sweeps) {
     if (n_sweeps) {
         for (int i = 0; i < n_sweeps; i++) wilson_flow(n5, epsilon, 0);
         return;
@@ -1245,13 +1242,13 @@ void su3_lattice_5d::wilson_flow(int n5, double epsilon, int n_sweeps) {
     for (int s = 0; s < n_sites; s++) site[s].copy_links(&hmc_site[s]);
 }
 
-double async_topological_charge(su3_site_5d* site, int n, int n5) {
+double async_topological_charge(su3_x_site* site, int n, int n5) {
     double Q = 0.0;
     for (int s = 0; s < n; s += n5) Q += site[s].topological_charge();
     return Q;
 }
 
-double su3_lattice_5d::topological_charge(int n5) {
+double su3_x_lattice::topological_charge(int n5) {
     double Q = 0.0;
 
     if (parallel) {
@@ -1265,10 +1262,10 @@ double su3_lattice_5d::topological_charge(int n5) {
     return (Q / 32.0 / M_PI / M_PI);
 }
 
-int su3_lattice_5d::thermalize(int n_min, int n_max) {
+int su3_x_lattice::thermalize(int n_min, int n_max) {
     
     // create a cold start model
-    su3_lattice_5d coldStart = su3_lattice_5d(N, T, N5, D, beta, true);
+    su3_x_lattice coldStart = su3_x_lattice(N, T, N5, D, beta, true);
     coldStart.parallel = parallel;
     double hot_plaquette = plaq(n5_center);
     double cold_plaquette = coldStart.plaq(n5_center);
@@ -1278,8 +1275,8 @@ int su3_lattice_5d::thermalize(int n_min, int n_max) {
     int m;
     for (m = 0; hot_plaquette < cold_plaquette; m++) {
         // sweep both models until the average plaquette reaches the same value
-//        sweep();
-//        coldStart.sweep();
+//        heat_bath();
+//        coldStart.heat_bath();
         hmc(0, true, true);
         coldStart.hmc(0, true, true);
         hot_plaquette = plaq(n5_center);
@@ -1294,7 +1291,7 @@ int su3_lattice_5d::thermalize(int n_min, int n_max) {
     cout << "P_hot = " << hot_plaquette;
     cout << ", P_cold = " << cold_plaquette << endl;
     int n_therm = max(n_min, m * 2);
-//    sweep(n_therm - m);
+//    heat_bath(n_therm - m);
     hmc(n_therm - m, true, false);
 
     // return value is total number of sweeps
@@ -1302,7 +1299,7 @@ int su3_lattice_5d::thermalize(int n_min, int n_max) {
     return n_therm;
 }
 
-double su3_lattice_5d::ave_link_t(int n5) {
+double su3_x_lattice::ave_link_t(int n5) {
     // average trace of links in the t direction
     // this should be ~0 in Coulomb gauge
     
@@ -1313,7 +1310,7 @@ double su3_lattice_5d::ave_link_t(int n5) {
     return U / double(n_sites);
 }
 
-double su3_lattice_5d::theta(bool coulomb, int n5) {
+double su3_x_lattice::theta(bool coulomb, int n5) {
     su3_link G1, G2;
     double th = 0.0;
     
@@ -1327,7 +1324,7 @@ double su3_lattice_5d::theta(bool coulomb, int n5) {
     return th;
 }
 
-double async_relax(su3_site_5d* site, int n, double error_target, bool coulomb, int N5) {
+double async_relax(su3_x_site* site, int n, double error_target, bool coulomb, int N5) {
     double avg_link = 0.0;
     double th = 1.0;
     while (th > error_target) {
@@ -1354,7 +1351,7 @@ double async_relax(su3_site_5d* site, int n, double error_target, bool coulomb, 
     return avg_link;
 }
 
-long double su3_lattice_5d::relax(long double error_target, bool coulomb, int n5) {
+long double su3_x_lattice::relax(long double error_target, bool coulomb, int n5) {
     
     double avg_link = 0.0;
     double th = 1.0;
@@ -1421,7 +1418,7 @@ long double su3_lattice_5d::relax(long double error_target, bool coulomb, int n5
     }
 }
 
-void su3_lattice_5d::write_four_point(const char* filename, bool coulomb, int n5) {
+void su3_x_lattice::write_four_point(const char* filename, bool coulomb, int n5) {
     
     ofstream file;
     file.open(filename, ofstream::app);
@@ -1441,7 +1438,7 @@ void su3_lattice_5d::write_four_point(const char* filename, bool coulomb, int n5
     file.close();
 }
 
-void su3_lattice_5d::write_correlator(const char* filename, bool coulomb, int n5) {
+void su3_x_lattice::write_correlator(const char* filename, bool coulomb, int n5) {
     
     ofstream file;
     file.open(filename, ofstream::app);

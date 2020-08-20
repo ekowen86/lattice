@@ -1,19 +1,19 @@
 //
-//  su3_5d.hpp
+//  su3_x.hpp
 //  Lattice
 //
 //  Created by Evan Owen on 10/19/18.
 //  Copyright © 2018 Evan Owen. All rights reserved.
 //
 
-#ifndef su3_5d_hpp
-#define su3_5d_hpp
+#ifndef su3_x_hpp
+#define su3_x_hpp
 
 #include <random>
 #include <complex>
 #include <Eigen/Dense>
 
-class su3_lattice_5d;
+class su3_x_lattice;
 typedef Eigen::Matrix<std::complex<double>, 3, 3> su3_link;
 typedef Eigen::Matrix<std::complex<double>, 1, 3> su3_vector;
 #define su3_identity su3_link::Identity()
@@ -29,15 +29,15 @@ typedef Eigen::Matrix<std::complex<double>, 2, 2> su2_link;
 #define SQRT3   1.73205080756887729352744634151  // sqrt(3)
 #define SQRT1_3 0.577350269189625764509148780502 // 1 / sqrt(3)
 
-class su3_site_5d {
+class su3_x_site {
 public:
     // variables
-    su3_lattice_5d* lattice; // parent lattice
+    su3_x_lattice* lattice; // parent lattice
     su3_link link[D_MAX]; // link values in each direction
     su3_link link_inverse[D_MAX]; // link inverse values
     su3_link p_link[D_MAX]; // conjugate momenta in each direction
-    su3_site_5d* forward[D_MAX]; // adjacent sites in the forward direction
-    su3_site_5d* backward[D_MAX]; // adjacent sites in the backward direction
+    su3_x_site* forward[D_MAX]; // adjacent sites in the forward direction
+    su3_x_site* backward[D_MAX]; // adjacent sites in the backward direction
     std::mt19937* gen; // random number generator for this time-slice
     bool forward_edge; // site is at the forward edge of the extra dimension
     bool backward_edge; // site is at the backward edge of the extra dimension
@@ -46,7 +46,7 @@ public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     
     // methods
-    void init(su3_lattice_5d* lattice, std::vector<su3_site_5d>& lattice_sites, int s);
+    void init(su3_x_lattice* lattice, std::vector<su3_x_site>& lattice_sites, int s);
     su3_link make_unitary(const su3_link& g);
     su3_link cayley_ham(const su3_link& Q);
     bool lock();
@@ -55,7 +55,7 @@ public:
     int rand_int(int min, int max);
     double rand_normal(double mean = 0.0, double stdev = 1.0);
     void reset_links(bool cold);
-    void copy_links(su3_site_5d* site);
+    void copy_links(su3_x_site* site);
     void set_link(int d, const su3_link& value);
     void init_momenta();
     su2_link create_su2(bool random);
@@ -85,11 +85,11 @@ public:
     double heat_bath_link(int d1);
     void cool();
     void cool_link(int d1);
-    void wilson_flow(su3_site_5d* target, double epsilon);
-    void wilson_flow_link(su3_site_5d* target, double epsilon, int d1);
+    void wilson_flow(su3_x_site* target, double epsilon);
+    void wilson_flow_link(su3_x_site* target, double epsilon, int d1);
 };
 
-class su3_lattice_5d {
+class su3_x_lattice {
 public:
     // variables
     int N; // array size (spacial)
@@ -102,7 +102,7 @@ public:
     int n_sites_5; // number of sites in a 5d sub-lattice
     int n_slice; // number of sites in each time slice of the entire lattice
     int n5_center; // center lattice
-    std::vector<su3_site_5d> site; // site values
+    std::vector<su3_x_site> site; // site values
     std::vector<int> i; // current position
     std::vector<std::mt19937> gen; // array of random number generators (one for each time-slice)
     std::vector<su2_link> sigma; // pauli spin matrices
@@ -112,16 +112,16 @@ public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
     // hmc
-    std::vector<su3_site_5d> hmc_site; // site values for hmc
+    std::vector<su3_x_site> hmc_site; // site values for hmc
     double dt; // hmc step size
     int n_steps; // hmc step count
     int hmc_accept; // number of accepted hmc configurations
     int hmc_count; // number of attempted hmc configurations
 
     // methods
-    su3_lattice_5d(int N, int T, int N5, int D, double beta, bool cold = false);
-    su3_lattice_5d(su3_lattice_5d* lattice);
-    ~su3_lattice_5d();
+    su3_x_lattice(int N, int T, int N5, int D, double beta, bool cold = false);
+    su3_x_lattice(su3_x_lattice* lattice);
+    ~su3_x_lattice();
     void init();
     double rand_double(double min = 0.0, double max = 1.0);
     int rand_int(int min, int max);
@@ -136,7 +136,7 @@ public:
     double correlator(int T, int n5);
     double four_point(int T, int R, int n5);
     double hamiltonian();
-    double hmc(int n_sweeps = 0, bool update_dt = false, bool no_metropolis = false);
+    void hmc(int n_sweeps = 0, bool update_dt = false, bool no_metropolis = false);
     void heat_bath(int n_sweeps = 0);
     void cool(int n5, int n_sweeps = 0);
     void wilson_flow(int n5, double epsilon = 0.02, int n_sweeps = 0);
@@ -149,4 +149,4 @@ public:
     void write_correlator(const char* filename, bool coulomb, int n5);
 };
 
-#endif /* su3_5d_hpp */
+#endif /* su3_x_hpp */

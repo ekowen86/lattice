@@ -19,11 +19,12 @@
 //         n_cool: number of cooling sweeps
 
 #include <iostream>
-//#include <iomanip>
+#include <iomanip>
 #include <sstream>
 #include <fstream>
 #include <thread>
 #include <sqlite3.h>
+
 #include "su3_x.hpp"
 
 using namespace std;
@@ -32,10 +33,10 @@ const char* filename;
 int N, T, N5, D, n_therm, n_sweeps, n_data, n_cool;
 double beta, t_wf;
 void init_db();
-void write_parameters(su3_lattice_5d* lattice);
-void write_wilson_loop(su3_lattice_5d*, double t);
-void write_topocharge(su3_lattice_5d*, int n_c);
-void write_polyakov_loop(su3_lattice_5d*, double t);
+void write_parameters(su3_x_lattice* lattice);
+void write_wilson_loop(su3_x_lattice*, double t);
+void write_topocharge(su3_x_lattice*, int n_c);
+void write_polyakov_loop(su3_x_lattice*, double t);
 
 int main(int argc, const char * argv[]) {
 
@@ -56,7 +57,7 @@ int main(int argc, const char * argv[]) {
     cout << std::setprecision(6) << fixed;
 
     // create a lattice and thermalize it
-    su3_lattice_5d lattice = su3_lattice_5d(N, T, N5, D, beta);
+    su3_x_lattice lattice = su3_x_lattice(N, T, N5, D, beta);
     lattice.parallel = true;
     cout << "thermalizing..." << endl;
     n_therm = lattice.thermalize(n_therm);
@@ -67,12 +68,12 @@ int main(int argc, const char * argv[]) {
     int n5_center = lattice.n5_center;
     for (int n = 0; n < n_data; n++) {
         
-//        if (n != 0) lattice.sweep(n_sweeps);
+//        if (n != 0) lattice.heat_bath(n_sweeps);
         if (n != 0) lattice.hmc(n_sweeps);
         
         cout << "writing configuration " << n << "...";
         
-        su3_lattice_5d wf_lattice = su3_lattice_5d(&lattice);
+        su3_x_lattice wf_lattice = su3_x_lattice(&lattice);
 //        write_wilson_loop(&wf_lattice, 0.0);
         write_polyakov_loop(&wf_lattice, 0.0);
         for (double t = 0.02; t < (t_wf + 0.01); t += 0.02) {
@@ -81,7 +82,7 @@ int main(int argc, const char * argv[]) {
             write_polyakov_loop(&wf_lattice, t);
         }
 
-        su3_lattice_5d cool_lattice = su3_lattice_5d(&lattice);
+        su3_x_lattice cool_lattice = su3_x_lattice(&lattice);
         write_topocharge(&cool_lattice, 0);
         for (int n = 10; n <= n_cool; n += 10) {
             cool_lattice.cool(n5_center, 10);
@@ -106,7 +107,6 @@ void init_db() {
 
     if (ret_code) {
         cerr << "can't open database: " << sqlite3_errmsg(db) << endl;
-//        fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
         return;
     }
 
@@ -117,7 +117,6 @@ void init_db() {
 
     if (ret_code != SQLITE_OK) {
         cerr << "sql error: " << zErrMsg << endl;
-//        fprintf(stderr, "SQL error: %s\n", zErrMsg);
         sqlite3_free(zErrMsg);
     }
 
@@ -145,7 +144,6 @@ void init_db() {
 
     if (ret_code != SQLITE_OK) {
         cerr << "sql error: " << zErrMsg << endl;
-//        fprintf(stderr, "SQL error: %s\n", zErrMsg);
         sqlite3_free(zErrMsg);
     }
 
@@ -161,7 +159,6 @@ void init_db() {
 
     if(ret_code != SQLITE_OK) {
         cerr << "sql error: " << zErrMsg << endl;
-//        fprintf(stderr, "SQL error: %s\n", zErrMsg);
         sqlite3_free(zErrMsg);
     }
 
@@ -169,7 +166,7 @@ void init_db() {
     sqlite3_close(db);
 }
 
-void write_parameters(su3_lattice_5d* lattice) {
+void write_parameters(su3_x_lattice* lattice) {
     
     // open sqlite database
     sqlite3* db;
@@ -180,7 +177,6 @@ void write_parameters(su3_lattice_5d* lattice) {
 
     if (ret_code) {
         cerr << "can't open database: " << sqlite3_errmsg(db) << endl;
-//        fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
         return;
     }
 
@@ -197,7 +193,6 @@ void write_parameters(su3_lattice_5d* lattice) {
 
     if(ret_code != SQLITE_OK) {
         cerr << "sql error: " << zErrMsg << endl;
-//        fprintf(stderr, "SQL error: %s\n", zErrMsg);
         sqlite3_free(zErrMsg);
     }
     
@@ -205,7 +200,7 @@ void write_parameters(su3_lattice_5d* lattice) {
     sqlite3_close(db);
 }
 
-void write_wilson_loop(su3_lattice_5d* lattice, double t) {
+void write_wilson_loop(su3_x_lattice* lattice, double t) {
 
     // calculate observables
     int n5_center = lattice->n5_center;
@@ -230,7 +225,6 @@ void write_wilson_loop(su3_lattice_5d* lattice, double t) {
 
     if (ret_code) {
         cerr << "can't open database: " << sqlite3_errmsg(db) << endl;
-//        fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
         return;
     }
 
@@ -250,7 +244,6 @@ void write_wilson_loop(su3_lattice_5d* lattice, double t) {
         ss << "'" << w[n] << "', ";
     }
     ss << "'" << w[2 * N_half - 2] << "')";
-//    cout << ss.str();
     ret_code = sqlite3_exec(db, ss.str().c_str(), NULL, 0, &zErrMsg);
 
     if(ret_code != SQLITE_OK) {
@@ -263,7 +256,7 @@ void write_wilson_loop(su3_lattice_5d* lattice, double t) {
 
 }
 
-void write_topocharge(su3_lattice_5d* lattice, int n_c) {
+void write_topocharge(su3_x_lattice* lattice, int n_c) {
     
     // calculate topological charge
     double topological_charge = lattice->topological_charge(lattice->n5_center);
@@ -277,7 +270,6 @@ void write_topocharge(su3_lattice_5d* lattice, int n_c) {
 
     if (ret_code) {
         cerr << "can't open database: " << sqlite3_errmsg(db) << endl;
-//        fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
         return;
     }
 
@@ -290,8 +282,7 @@ void write_topocharge(su3_lattice_5d* lattice, int n_c) {
     ret_code = sqlite3_exec(db, ss.str().c_str(), NULL, 0, &zErrMsg);
 
     if(ret_code != SQLITE_OK) {
-        cerr << "sQL error: " << zErrMsg << endl;
-//        fprintf(stderr, "SQL error: %s\n", zErrMsg);
+        cerr << "sql error: " << zErrMsg << endl;
         sqlite3_free(zErrMsg);
     }
     
@@ -300,7 +291,7 @@ void write_topocharge(su3_lattice_5d* lattice, int n_c) {
 
 }
 
-void write_polyakov_loop(su3_lattice_5d* lattice, double t) {
+void write_polyakov_loop(su3_x_lattice* lattice, double t) {
     
     // calculate observables
     int n5_center = lattice->n5_center;
@@ -320,7 +311,6 @@ void write_polyakov_loop(su3_lattice_5d* lattice, double t) {
 
     if (ret_code) {
         cerr << "can't open sqlite database: " << sqlite3_errmsg(db) << endl;
-//        fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));
         return;
     }
 
@@ -338,12 +328,10 @@ void write_polyakov_loop(su3_lattice_5d* lattice, double t) {
         ss << ", '" << p[n] << "'";
     }
     ss << ")";
-//    cout << ss.str() << "\n";
     ret_code = sqlite3_exec(db, ss.str().c_str(), NULL, 0, &zErrMsg);
 
     if(ret_code != SQLITE_OK) {
         cerr << "sql error: " << zErrMsg << endl;
-//        fprintf(stderr, "SQL error: %s\n", zErrMsg);
         sqlite3_free(zErrMsg);
     }
     
