@@ -12,6 +12,7 @@
 //         N5: number of coupled parallel lattices in extra dimension
 //         D: number of dimensions (excluding extra dimension)
 //         beta: gauge coupling
+//         eps5: ratio of coupling in extra dimension to normal coupling
 //         n_therm: minimum number of thermalization sweeps
 //         n_sweeps: number of sweeps per data collection
 //         n_data: number of data values to collect
@@ -31,9 +32,10 @@ using namespace std;
 
 const char* filename;
 int N, T, N5, D, n_therm, n_sweeps, n_data, n_cool;
-double beta, t_wf;
+double beta, eps5, t_wf;
 void init_db();
 void write_parameters(su3_x_lattice* lattice);
+void write_action(su3_x_lattice*, double t);
 void write_wilson_loop(su3_x_lattice*, double t);
 void write_topocharge(su3_x_lattice*, int n_c);
 void write_polyakov_loop(su3_x_lattice*, double t);
@@ -45,23 +47,24 @@ int main(int argc, const char * argv[]) {
     T = atoi(argv[3]); cout << "T = " << T << ", ";
     N5 = atoi(argv[4]); cout << "N5 = " << N5 << ", ";
     D = atoi(argv[5]); cout << "D = " << D << ", ";
-    cout << std::setprecision(4) << fixed;
+    cout << setprecision(4) << fixed;
     beta = stod(argv[6]); cout << "beta = " << beta << ", ";
-    n_therm = atoi(argv[7]); cout << "n_therm = " << n_therm << ", ";
-    n_sweeps = atoi(argv[8]); cout << "n_sweeps = " << n_sweeps << ", ";
-    n_data = atoi(argv[9]); cout << "n_data = " << n_data << ", ";
-    t_wf = stod(argv[10]); cout << "t_wf = " << t_wf << ", ";
-    n_cool = atoi(argv[11]); cout << "n_cool = " << n_cool << "\n";
+    eps5 = stod(argv[7]); cout << "eps5 = " << eps5 << ", ";
+    n_therm = atoi(argv[8]); cout << "n_therm = " << n_therm << ", ";
+    n_sweeps = atoi(argv[9]); cout << "n_sweeps = " << n_sweeps << ", ";
+    n_data = atoi(argv[10]); cout << "n_data = " << n_data << ", ";
+    t_wf = stod(argv[11]); cout << "t_wf = " << t_wf << ", ";
+    n_cool = atoi(argv[12]); cout << "n_cool = " << n_cool << "\n";
     cout << thread::hardware_concurrency() << " parallel cores available" << endl;
 
-    cout << std::setprecision(6) << fixed;
+    cout << setprecision(6) << fixed;
 
     // create a lattice and thermalize it
-    su3_x_lattice lattice = su3_x_lattice(N, T, N5, D, beta);
+    su3_x_lattice lattice = su3_x_lattice(N, T, N5, D, beta, eps5);
     lattice.parallel = true;
     cout << "thermalizing..." << endl;
     n_therm = lattice.thermalize(n_therm);
-    
+
     init_db();
     write_parameters(&lattice);
     
@@ -70,14 +73,16 @@ int main(int argc, const char * argv[]) {
         
 //        if (n != 0) lattice.heat_bath(n_sweeps);
         if (n != 0) lattice.hmc(n_sweeps);
-        
+
         cout << "writing configuration " << n << "...";
         
         su3_x_lattice wf_lattice = su3_x_lattice(&lattice);
+//        write_action(&wf_lattice, 0.0);
 //        write_wilson_loop(&wf_lattice, 0.0);
         write_polyakov_loop(&wf_lattice, 0.0);
         for (double t = 0.02; t < (t_wf + 0.01); t += 0.02) {
             wf_lattice.wilson_flow(n5_center, 0.02);
+//            write_action(&wf_lattice, t);
 //            write_wilson_loop(&wf_lattice, t);
             write_polyakov_loop(&wf_lattice, t);
         }
@@ -120,6 +125,17 @@ void init_db() {
         sqlite3_free(zErrMsg);
     }
 
+//    // create the action table if it doesn't exist
+//    ss.str("");
+//    ss << "CREATE TABLE IF NOT EXISTS action (flow_t INTEGER, S VARCHAR)";
+//
+//    ret_code = sqlite3_exec(db, ss.str().c_str(), NULL, 0, &zErrMsg);
+//
+//    if (ret_code != SQLITE_OK) {
+//        cerr << "sql error: " << zErrMsg << endl;
+//        sqlite3_free(zErrMsg);
+//    }
+//
 //    // create the wilson loop table if it doesn't exist
 //    ss.str("");
 //    ss << "CREATE TABLE IF NOT EXISTS wilson_loop (flow_t VARCHAR, plaq VARCHAR";
@@ -189,6 +205,43 @@ void write_parameters(su3_x_lattice* lattice) {
     ss << D << ", ";
     ss << setprecision(4) << fixed;
     ss << "'" << beta << "')";
+    ret_code = sqlite3_exec(db, ss.str().c_str(), NULL, 0, &zErrMsg);
+
+    if(ret_code != SQLITE_OK) {
+        cerr << "sql error: " << zErrMsg << endl;
+        sqlite3_free(zErrMsg);
+    }
+    
+    // close sqlite database
+    sqlite3_close(db);
+}
+
+void write_action(su3_x_lattice* lattice, double t) {
+    
+    // calculate action
+    int n5_center = lattice->n5_center;
+    
+    double action = lattice->action(n5_center);
+    
+    // open sqlite database
+    sqlite3* db;
+    char *zErrMsg = 0;
+    int ret_code;
+
+    ret_code = sqlite3_open(filename, &db);
+
+    if (ret_code) {
+        cerr << "can't open sqlite database: " << sqlite3_errmsg(db) << endl;
+        return;
+    }
+
+    // write observables to database
+    stringstream ss;
+    ss << "INSERT INTO action (flow_t, S) VALUES (";
+    ss << setprecision(4) << fixed;
+    ss << "'" << t << "'";
+    ss << setprecision(8) << scientific;
+    ss << ", '" << action << "')";
     ret_code = sqlite3_exec(db, ss.str().c_str(), NULL, 0, &zErrMsg);
 
     if(ret_code != SQLITE_OK) {

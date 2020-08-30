@@ -46,7 +46,7 @@ public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     
     // methods
-    void init(su3_x_lattice* lattice, std::vector<su3_x_site>& lattice_sites, int s);
+    void init(su3_x_lattice* lattice, su3_x_site* lattice_sites, int s);
     su3_link make_unitary(const su3_link& g);
     su3_link cayley_ham(const su3_link& Q);
     bool lock();
@@ -70,7 +70,7 @@ public:
     su3_link staple(int d1);
     su3_link cloverleaf(int d1, int d2);
     double wilson_loop(int a, int b);
-    double polyakov_loop(int r);
+    std::complex<double> polyakov_loop(int r);
     double correlator(int T);
     double topological_charge();
     double mag_U();
@@ -87,6 +87,8 @@ public:
     void cool_link(int d1);
     void wilson_flow(su3_x_site* target, double epsilon);
     void wilson_flow_link(su3_x_site* target, double epsilon, int d1);
+    void stout_smear(su3_x_site* target, double rho);
+    void stout_smear_link(su3_x_site* target, double rho, int d1);
 };
 
 class su3_x_lattice {
@@ -97,17 +99,18 @@ public:
     int N5; // 5th dimension size
     int D; // number of dimensions
     double beta; // coupling factor
-    bool parallel;
+    double eps5; // ratio of coupling in extra dimension to normal coupling
     int n_sites; // number of sites in the entire lattice
     int n_sites_5; // number of sites in a 5d sub-lattice
     int n_slice; // number of sites in each time slice of the entire lattice
     int n5_center; // center lattice
     std::vector<su3_x_site> site; // site values
-    std::vector<int> i; // current position
     std::vector<std::mt19937> gen; // array of random number generators (one for each time-slice)
     std::vector<su2_link> sigma; // pauli spin matrices
     std::vector<su3_link> lambda; // gell-mann matrices
-    double z; // metropolis factor for heat bath
+    double z; // heat bath metropolis factor
+    int verbose;
+    bool parallel;
 
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
@@ -119,20 +122,18 @@ public:
     int hmc_count; // number of attempted hmc configurations
 
     // methods
-    su3_x_lattice(int N, int T, int N5, int D, double beta, bool cold = false);
+    su3_x_lattice(int N, int T, int N5, int D, double beta, double eps5, bool cold = false);
     su3_x_lattice(su3_x_lattice* lattice);
     ~su3_x_lattice();
     void init();
     double rand_double(double min = 0.0, double max = 1.0);
     int rand_int(int min, int max);
     double rand_normal(double mean = 0.0, double stdev = 1.0);
-    void update_i(int s);
-    int update_s();
-    void move(int d, int n);
+    int get_site(int s, int d, int n);
     double plaq(int n5);
     double action(int n5);
     double wilson_loop(int a, int b, int n5);
-    double polyakov_loop(int r, int n5);
+    double polyakov_loop(int R, int n5);
     double correlator(int T, int n5);
     double four_point(int T, int R, int n5);
     double hamiltonian();
@@ -140,6 +141,7 @@ public:
     void heat_bath(int n_sweeps = 0);
     void cool(int n5, int n_sweeps = 0);
     void wilson_flow(int n5, double epsilon = 0.02, int n_sweeps = 0);
+    void stout_smear(int n5, double rho = 0.1, int n_sweeps = 0);
     double topological_charge(int n5);
     int thermalize(int n_min = 0, int n_max = 0);
     double ave_link_t(int n5);
