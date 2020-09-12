@@ -5,8 +5,8 @@
 //  Created by Evan Owen on 5/26/20.
 //  Copyright © 2020 Evan Owen. All rights reserved.
 //
-//  usage: su3_topological_charge_5d output N T N5 D beta precision gauge n_therm n_sweeps n_data
-//         filename: output file name
+//  usage: su3_topological_charge_5d output N T N5 D beta eps5 n_therm n_sweeps n_data t_wf n_cool
+//         output: output data filename
 //         N: lattice size (spacial dimensions)
 //         T: lattice size (time dimension)
 //         N5: number of coupled parallel lattices in extra dimension
@@ -40,7 +40,7 @@ void write_wilson_loop(su3_x_lattice*, double t);
 void write_topocharge(su3_x_lattice*, int n_c);
 void write_polyakov_loop(su3_x_lattice*, double t);
 
-int main(int argc, const char * argv[]) {
+int main(int argc, const char* argv[]) {
 
     filename = argv[1]; cout << "output = " << filename << ", ";
     N = atoi(argv[2]); cout << "N = " << N << ", ";
@@ -67,15 +67,15 @@ int main(int argc, const char * argv[]) {
 
     init_db();
     write_parameters(&lattice);
-    
+
     int n5_center = lattice.n5_center;
     for (int n = 0; n < n_data; n++) {
-        
+
 //        if (n != 0) lattice.heat_bath(n_sweeps);
         if (n != 0) lattice.hmc(n_sweeps);
 
         cout << "writing configuration " << n << "...";
-        
+
         su3_x_lattice wf_lattice = su3_x_lattice(&lattice);
 //        write_action(&wf_lattice, 0.0);
 //        write_wilson_loop(&wf_lattice, 0.0);
@@ -183,7 +183,7 @@ void init_db() {
 }
 
 void write_parameters(su3_x_lattice* lattice) {
-    
+
     // open sqlite database
     sqlite3* db;
     char *zErrMsg = 0;
@@ -211,18 +211,18 @@ void write_parameters(su3_x_lattice* lattice) {
         cerr << "sql error: " << zErrMsg << endl;
         sqlite3_free(zErrMsg);
     }
-    
+
     // close sqlite database
     sqlite3_close(db);
 }
 
 void write_action(su3_x_lattice* lattice, double t) {
-    
+
     // calculate action
     int n5_center = lattice->n5_center;
-    
+
     double action = lattice->action(n5_center);
-    
+
     // open sqlite database
     sqlite3* db;
     char *zErrMsg = 0;
@@ -248,7 +248,7 @@ void write_action(su3_x_lattice* lattice, double t) {
         cerr << "sql error: " << zErrMsg << endl;
         sqlite3_free(zErrMsg);
     }
-    
+
     // close sqlite database
     sqlite3_close(db);
 }
@@ -310,7 +310,7 @@ void write_wilson_loop(su3_x_lattice* lattice, double t) {
 }
 
 void write_topocharge(su3_x_lattice* lattice, int n_c) {
-    
+
     // calculate topological charge
     double topological_charge = lattice->topological_charge(lattice->n5_center);
 
@@ -338,23 +338,23 @@ void write_topocharge(su3_x_lattice* lattice, int n_c) {
         cerr << "sql error: " << zErrMsg << endl;
         sqlite3_free(zErrMsg);
     }
-    
+
     // close sqlite database
     sqlite3_close(db);
 
 }
 
 void write_polyakov_loop(su3_x_lattice* lattice, double t) {
-    
+
     // calculate observables
     int n5_center = lattice->n5_center;
-    
+
     int N_half = N >> 1;
     double p[N_half];
     for (int R = 0; R < N_half; R++) {
         p[R] = lattice->polyakov_loop(R + 1, n5_center);
     }
-    
+
     // open sqlite database
     sqlite3* db;
     char *zErrMsg = 0;
@@ -387,7 +387,7 @@ void write_polyakov_loop(su3_x_lattice* lattice, double t) {
         cerr << "sql error: " << zErrMsg << endl;
         sqlite3_free(zErrMsg);
     }
-    
+
     // close sqlite database
     sqlite3_close(db);
 }

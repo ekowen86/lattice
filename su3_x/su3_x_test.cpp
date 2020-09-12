@@ -3,53 +3,51 @@
 //  su3_x_test
 //
 //  Created by Evan Owen on 8/21/20.
+//  Copyright © 2020 Evan Owen. All rights reserved.
 //
+//  usage: su3_test N T N5 D beta_start beta_stop beta_inc eps5 n_sweeps n_data
+//         N: lattice size (spacial dimensions)
+//         T: lattice size (time dimension)
+//         N5: number of coupled parallel lattices in extra dimension
+//         D: number of dimensions (excluding extra dimension)
+//         beta: gauge coupling
+//         eps5: ratio of coupling in extra dimension to normal coupling
+//         n_therm: minimum number of thermalization sweeps
+//         n_sweeps: number of sweeps per data collection
+//         n_data: number of data values to collect
 
 #include <iostream>
 #include <iomanip>
+#include <thread>
 
 #include "su3_x.hpp"
 
 using namespace std;
 
-int main() {
+int main(int argc, const char* argv[]) {
 
-    // print parameters
-    int N = 6; cout << "N = " << N << ", ";
-    int T = 6; cout << "T = " << T << ", ";
-    int N5 = 3; cout << "N5 = " << N5 << ", ";
-    int D = 4; cout << "D = " << D << ", ";
-    double beta = 5.7; cout << "beta = " << setprecision(2) << fixed << beta << ", ";
-    double eps5 = 0.5; cout << "eps5 = " << setprecision(2) << fixed << eps5 << ", ";
-    int n_data = 20; cout << "n_data = " << n_data << endl;
+    int N = atoi(argv[1]); cout << "N = " << N << ", ";
+    int T = atoi(argv[2]); cout << "T = " << T << ", ";
+    int N5 = atoi(argv[3]); cout << "N5 = " << N5 << ", ";
+    int D = atoi(argv[4]); cout << "D = " << D << endl;
     
-    // initialize and thermalize the lattice
-    su3_x_lattice lattice = su3_x_lattice(N, T, N5, D, beta, eps5);
+    cout << setprecision(4) << fixed;
+    double beta_start = stod(argv[5]); cout << "beta_start = " << beta_start << ", ";
+    double beta_stop = stod(argv[6]); cout << "beta_stop = " << beta_stop << ", ";
+    double beta_inc = stod(argv[7]); cout << "beta_inc = " << beta_inc << ", ";
+    double eps5 = stod(argv[8]); cout << "eps5 = " << eps5 << endl;
+    
+    int n_sweeps = atoi(argv[9]); cout << "n_sweeps = " << n_sweeps << ", ";
+    int n_data = atoi(argv[10]); cout << "n_data = " << n_data << endl;
+    
+    cout << thread::hardware_concurrency() << " parallel cores available" << endl;
+
+    // initialize the lattice
+    su3_x_lattice lattice = su3_x_lattice(N, T, N5, D, beta_start, eps5);
     lattice.parallel = true;
 
-//    lattice.verbose = 1;
-//    lattice.thermalize();
-//    lattice.verbose = 0;
-//    for (int n = 0; n < n_data; n++) {
-//
-//        // update the lattice
-//        if (n != 0) lattice.hmc(20);
-//
-//        // copy the lattice and smear it
-//        su3_x_lattice smear_lattice(lattice);
-////        smear_lattice.stout_smear(smear_lattice.n5_center, 0.2, 5);
-//
-//        // print results
-//        cout << setprecision(6);
-//        cout << smear_lattice.polyakov_loop(1, smear_lattice.n5_center);
-//        for (int r = 2; r <= (N / 2); r++) {
-//            cout << ", " << smear_lattice.polyakov_loop(r, smear_lattice.n5_center);
-//        }
-//        cout << endl;
-//    }
-
     double plaq, plaq_sum;
-    for (double beta = 0.5; beta <= 10.0; beta += 0.5) {
+    for (double beta = beta_start; beta <= beta_stop; beta += beta_inc) {
         lattice.verbose = 1;
         lattice.beta = beta;
         lattice.thermalize();
@@ -60,15 +58,15 @@ int main() {
             plaq_sum += plaq;
             cout << setprecision(6) << fixed;
             cout << plaq << endl;
-//            lattice.heat_bath(20);
-            lattice.hmc(20);
+//            lattice.heat_bath(n_sweeps);
+            lattice.hmc(n_sweeps);
         }
-        cout << setprecision(2) << fixed;
+        cout << setprecision(4) << fixed;
         cout << "beta = " << beta;
         cout << setprecision(6) << fixed;
         cout << ", plaq = " << plaq_sum / double(n_data);
         cout << ", E = " << (1.0 - plaq_sum / double(n_data) / 3.0) << endl;
     }
-    
+
     return 0;
 }
