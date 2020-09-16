@@ -118,7 +118,7 @@ void init_db() {
     }
 
     // create the parameter table if it doesn't exist
-    ss << "CREATE TABLE IF NOT EXISTS parameters (N INTEGER, T INTEGER, N_5 INTEGER, D INTEGER, beta VARCHAR)";
+    ss << "CREATE TABLE IF NOT EXISTS parameters (N INTEGER, T INTEGER, N_5 INTEGER, D INTEGER, beta VARCHAR, dt_hmc VARCHAR)";
 
     ret_code = sqlite3_exec(db, ss.str().c_str(), NULL, 0, &zErrMsg);
 
@@ -200,13 +200,15 @@ void write_parameters(su3_x_lattice* lattice) {
 
     // write parameters to database
     stringstream ss;
-    ss << "INSERT INTO parameters (N, T, N_5, D, beta) VALUES (";
+    ss << "INSERT INTO parameters (N, T, N_5, D, beta, dt_hmc) VALUES (";
     ss << N << ", ";
     ss << T << ", ";
     ss << N5 << ", ";
     ss << D << ", ";
     ss << setprecision(4) << fixed;
-    ss << "'" << beta << "')";
+    ss << "'" << beta << "', ";
+    ss << setprecision(8) << fixed;
+    ss << "'" << lattice->dt * lattice->n_steps * n_data << "')";
     ret_code = sqlite3_exec(db, ss.str().c_str(), NULL, 0, &zErrMsg);
 
     if(ret_code != SQLITE_OK) {

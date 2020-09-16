@@ -2,6 +2,10 @@ import sqlite3
 import numpy as np
 import matplotlib.pyplot as plt
 
+id = "16_1_6300"
+L = int(16) # lattice size
+T = int(16) # lattice size (time direction)
+
 def jackknife_mean(data, n_sub):
 	f_sub = float(n_sub) # number of data subsets
 	start = 0 # start of current block of data
@@ -28,7 +32,7 @@ def jackknife_mean(data, n_sub):
 
 
 print("Opening sqlite file...")
-con = sqlite3.connect("data_wp/su3_x_16_1_5900.db")
+con = sqlite3.connect("data/su3_x_" + id + ".db")
 cursor = con.cursor()
 cursor.execute("SELECT Q FROM topocharge WHERE n_c='1000'")
 rows = cursor.fetchall()
@@ -41,8 +45,6 @@ Q = np.array(map(row2float, rows))
 absQ = np.abs(Q)
 Q2 = Q * Q
 
-L = 16
-T = 16
 V = L**3 * T
 
 Q_bar, d_Q = jackknife_mean(Q, 20)
@@ -87,7 +89,7 @@ plt.figure()
 plt.plot(N_array, N_sum)
 plt.xlabel("N")
 plt.ylabel("f(N)")
-plt.savefig("q_int.pdf")
+plt.savefig("plots/q_int.pdf")
 
 begin = 1.00
 end = 1.15
@@ -102,7 +104,7 @@ plt.plot(N_array, N_sum)
 # plt.xlim()
 plt.xlabel("N")
 plt.ylabel("f(N)")
-plt.savefig("q_int_zoom.pdf")
+plt.savefig("plots/q_int_zoom.pdf")
 
 # print(Q * N_best)
 print(Q_N)
@@ -113,5 +115,5 @@ plt.xlim(-6.5, 6.5)
 plt.hist(Q_N, 9, (-4.5,4.5), color="orange")
 plt.xlabel("Q")
 plt.ylabel("Count")
-plt.savefig("q_hist.pdf")
+plt.savefig("plots/Q_" + id + ".pdf")
 

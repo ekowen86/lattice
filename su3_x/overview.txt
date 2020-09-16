@@ -1,5 +1,5 @@
 
-su3_x_L_N5_beta_eps5
+filename format for data files: su3_x_{L}_{N5}_{beta}_{eps5}.db
 
 L: lattice size
 N5: number of slices in extra dimension
@@ -18,7 +18,7 @@ t_DQ: average hybrid monte carlo time per change in topological charge (d_tau / 
 
 n = 200
 n_sub = 20
-sqrt(sigma) = 0.3681(37)
+sqrt(sigma) = 0.3675(35)
 d_tau = 100.0734
 DQ = 2.98(19)
 DQ/d_tau = 0.0298(19)
@@ -30,7 +30,7 @@ t_DQ = 33.5
 
 n = 200
 n_sub = 20
-sqrt(sigma) = 0.2898(14)
+sqrt(sigma) = 0.2881(19)
 d_tau = 113.4503
 DQ = 2.40(13)
 DQ/d_tau = 0.0211(11)
@@ -42,7 +42,7 @@ t_DQ = 47.3
 
 n = 200
 n_sub = 20
-sqrt(sigma) = 0.2343(20)
+sqrt(sigma) = 0.2310(24)
 d_tau = 93.7606
 DQ = 1.31(10)
 DQ/d_tau = 0.0139(11)
@@ -56,7 +56,7 @@ first run / second run / average
 
 n = 100 / 100
 n_sub = 20
-sqrt(sigma) = 0.1973(6) / 0.1908(12) / 0.1940(7)
+sqrt(sigma) = 0.1973(6) / 0.1908(12) / 0.1929(6)
 d_tau = 46.4115 / 57.8769
 DQ = 0.535(62) / 0.737(90)
 DQ/d_tau = 0.0115(13) / 0.0127(15) / 0.0120(10)
@@ -68,7 +68,7 @@ t_DQ = 86.8 / 78.5 / 83.3
 
 n = 200
 n_sub = 20
-sqrt(sigma) = 0.1652(13)
+sqrt(sigma) = 0.1630(14)
 d_tau = 103.1366
 DQ = 0.221(49)
 DQ/d_tau = 0.00214(48)
@@ -80,7 +80,7 @@ t_DQ = 467
 
 n = 200
 n_sub = 20
-sqrt(sigma) = 0.1512(5)
+sqrt(sigma) = 0.1507(4)
 d_tau = 115.7538
 DQ = 0.166(50)
 DQ/d_tau = 0.00143(43)
@@ -92,10 +92,10 @@ t_DQ = 697
 
 n = 200
 n_sub = 20
-sqrt(sigma) = 
+sqrt(sigma) = 0.1355(10)
 d_tau = 105.2307
-DQ = 
-DQ/d_tau = 
+DQ = 0.101(50)
+DQ/d_tau = 0.00096(47)
 
 -----------------------------
 
@@ -111,7 +111,7 @@ DQ/d_tau =
 
 n = 100
 n_sub = 20
-sqrt(sigma) = 0.2009(9)
+sqrt(sigma) = 0.1993(8)
 d_tau = 38.3566
 DQ = 0.737(92)
 DQ/d_tau = 0.0192(24)
@@ -131,7 +131,7 @@ t_DQ = 52.0
 
 n = 100
 n_sub = 20
-sqrt(sigma) = 0.2044(6)
+sqrt(sigma) = 0.2060(8)
 d_tau = 37.9730
 DQ = 0.354(75)
 DQ/d_tau = 0.0093(20)

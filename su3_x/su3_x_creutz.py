@@ -9,7 +9,13 @@ import warnings
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-def creutz_ratio(w00, w10, w11):
+id = "16_1_5700"
+L = int(16) # lattice size
+R_half = int(L / 2) # half lattice size
+R_min = 2 # min R value for fit
+R_max = 7 # max R value for fit
+
+def creutz_ratio(w00, w01, w11):
 	w00_bar = np.mean(w00)
 	w01_bar = np.mean(w01)
 	w11_bar = np.mean(w11)
@@ -51,23 +57,26 @@ def collapse_row(row):
 
 
 print("\nOpening data file...")
-con = sqlite3.connect("data_wp/su3_x_16_1_5900.db")
+con = sqlite3.connect("data/su3_x_" + id + ".db")
 cursor = con.cursor()
 
-L = int(16) # lattice size
-R_half = int(L / 2)
-R_min = 2 # min R value for fit
-R_max = 7 # max R value for fit
 chi = np.empty(R_half - 1)
 d_chi = np.empty(R_half - 1)
+R = np.zeros(R_half - 1) # R values
+_R2 = np.zeros(R_half - 1) # 1/R^2 values
 
 print("\nCalculating Creutz ratios...")
 for r in range(0, R_half - 1):
 
-	# this value of wilson flow time has a smearing radius of R-1 when
+	# use a wilson flow time with a smearing radius of R - 1 when
 	# calculating a Creutz ratio chi(R,R), rounded down to the nearest
-	# multiple of 0.02
- 	T = np.floor(r**2 / 8.0 * 50.0) / 50.0
+	# multiple of 0.02. Note that r = R - 1
+	# R_smear = sqrt(8 * T)
+ 	T = np.floor(r**2.0 / 8.0 * 50.0) / 50.0
+
+	# get R and 1/R^2
+	R[r] = (r + 1.0)
+	_R2[r] = 1 / R[r]**2.0
 
 	# get W(R,R)
 	cursor.execute("SELECT W_%d%d FROM wilson_loop WHERE flow_t='%.04f'" % (r+1, r+1, T))
@@ -82,36 +91,27 @@ for r in range(0, R_half - 1):
 	w11 = collapse_row(cursor.fetchall())
 
 	# calculate Creutz ratio
-	(chi[r], d_chi[r]) = jackknife_creutz(w00, w01, w11, 20)
+	chi[r], d_chi[r] = jackknife_creutz(w00, w01, w11, 20)
+	print("chi(%d,%d) = %.12f (%.12f)" % (r+1, r+1, chi[r], d_chi[r]))
 	
 cursor.close()
 con.close()
 
-for r in range(0, R_half - 1):
-	print("chi(%d,%d) = %.12f (%.12f)" % (r+1, r+1, chi[r], d_chi[r]))
-
 # best fit for string tension
 print("\nFitting string tension and plotting...")
 
-R = np.zeros(R_half - 1)
-_R2 = np.zeros(R_half - 1)
-for r in range(0, R_half - 1):
-	R[r] = (r + 1.0)
-	_R2[r] = 1 / R[r]**2
-# 	_R2[r] = 1 / R[r]**2 + 1 / (L - R[r])**2
-
-def sigma_fit(r, sqrt_sigma, m):
-	return sqrt_sigma**2 + m / r**2
-# 	return sqrt_sigma**2 + m * (1 / r**2 + 1 / (L - r)**2)
-# 	return sqrt_sigma**2 + m * (L / (r * (L - r)))**2
+def sigma_fit(R, sqrt_sigma, B):
+	return sqrt_sigma**2.0 + B / R**2.0
+# 	return sqrt_sigma**2 + B * (1 / R**2 + 1 / (L - R)**2)
+# 	return sqrt_sigma**2 + B * (L / (R * (L - R)))**2
 
 popt, pcov = opt.curve_fit(sigma_fit, R[R_min-1:R_max], chi[R_min-1:R_max], [0.05, 1.0], sigma=d_chi[R_min-1:R_max])
 sqrt_sigma = popt[0]
 d_sqrt_sigma = np.sqrt(pcov[0][0])
-m = popt[1]
-d_m = np.sqrt(pcov[1][1])
-print("\nchi(R) = sigma + m / R^2")
-print("m = %.12f (%.12f)" % (m, d_m))
+B = popt[1]
+d_B = np.sqrt(pcov[1][1])
+print("\nchi(R,R) = sigma + B / R^2")
+print("B = %.12f (%.12f)" % (B, d_B))
 print("sigma = %.12f (%.12f)" % (sqrt_sigma**2, 2 * np.abs(sqrt_sigma) * d_sqrt_sigma))
 print("sqrt(sigma) = %.12f (%.12f)" % (np.abs(sqrt_sigma), d_sqrt_sigma))
 
@@ -120,25 +120,25 @@ R_A = np.linspace(0.001, R_half, 1000)
 _R2_A = np.zeros(len(R_A))
 chi_A = np.zeros(len(R_A))
 for r in range(0, len(R_A)):
-	chi_A[r] = sigma_fit(R_A[r], sqrt_sigma, m)
+	chi_A[r] = sigma_fit(R_A[r], sqrt_sigma, B)
 	_R2_A[r] = 1 / R_A[r]**2
 # 	_R2_A[r] = 1 / R_A[r]**2 + 1 / (L - R_A[r])**2
 
 plt.rcParams.update({
     "text.usetex": False,
     "font.family": "sans-serif"})
-    
+
 # plot chi vs R
-plt.figure()
-plt.xlim(0.8, R_half + 0.2)
+# plt.figure()
+# plt.xlim(0.8, R_half + 0.2)
 # plt.yscale("log")
-plt.ylim(0.0, chi[1] + 0.1)
-plt.errorbar(R[1:], chi[1:], yerr=d_chi[1:], color="blue", marker='o', ms=5, mew=0.5, mfc='none', linestyle='none', linewidth=0.5, capsize=2.5, capthick=0.5)
-plt.plot(R_A, chi_A, color="blue", linewidth=0.5)
-plt.xlabel("$R$")
-plt.ylabel("$\chi(R,R)$")
-plt.savefig("plot_sigma_r2.pdf")
-plt.close()
+# plt.ylim(0.0, chi[1] + 0.1)
+# plt.errorbar(R[1:], chi[1:], yerr=d_chi[1:], color="blue", marker='o', ms=5, mew=0.5, mfc='none', linestyle='none', linewidth=0.5, capsize=2.5, capthick=0.5)
+# plt.plot(R_A, chi_A, color="blue", linewidth=0.5)
+# plt.xlabel("$R$")
+# plt.ylabel("$\chi(R,R)$")
+# plt.savefig("plot_sigma_r2.pdf")
+# plt.close()
 
 # plot chi vs 1/R^2
 plt.figure()
@@ -149,7 +149,7 @@ plt.errorbar(_R2[1:], chi[1:], yerr=d_chi[1:], color="blue", marker='o', ms=5, m
 plt.plot(_R2_A, chi_A, color="blue", linewidth=0.5)
 plt.xlabel("$1/R^2$")
 plt.ylabel("$\chi(R,R)$")
-plt.savefig("plot_sigma_lin.pdf")
+plt.savefig("plots/W_" + id + ".pdf")
 plt.close()
 
 # actual beta
