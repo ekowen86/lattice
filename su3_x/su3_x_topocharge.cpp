@@ -42,19 +42,19 @@ void write_polyakov_loop(su3_x_lattice*, double t);
 
 int main(int argc, const char* argv[]) {
 
-    filename = argv[1]; cout << "output = " << filename << ", ";
+    filename = argv[1]; cout << "output = " << filename << endl;
     N = atoi(argv[2]); cout << "N = " << N << ", ";
     T = atoi(argv[3]); cout << "T = " << T << ", ";
     N5 = atoi(argv[4]); cout << "N5 = " << N5 << ", ";
-    D = atoi(argv[5]); cout << "D = " << D << ", ";
+    D = atoi(argv[5]); cout << "D = " << D << endl;
     cout << setprecision(4) << fixed;
     beta = stod(argv[6]); cout << "beta = " << beta << ", ";
-    eps5 = stod(argv[7]); cout << "eps5 = " << eps5 << ", ";
+    eps5 = stod(argv[7]); cout << "eps5 = " << eps5 << endl;
     n_therm = atoi(argv[8]); cout << "n_therm = " << n_therm << ", ";
     n_sweeps = atoi(argv[9]); cout << "n_sweeps = " << n_sweeps << ", ";
     n_data = atoi(argv[10]); cout << "n_data = " << n_data << ", ";
     t_wf = stod(argv[11]); cout << "t_wf = " << t_wf << ", ";
-    n_cool = atoi(argv[12]); cout << "n_cool = " << n_cool << "\n";
+    n_cool = atoi(argv[12]); cout << "n_cool = " << n_cool << endl;
     cout << thread::hardware_concurrency() << " parallel cores available" << endl;
 
     cout << setprecision(6) << fixed;
@@ -62,8 +62,10 @@ int main(int argc, const char* argv[]) {
     // create a lattice and thermalize it
     su3_x_lattice lattice = su3_x_lattice(N, T, N5, D, beta, eps5);
     lattice.parallel = true;
-    cout << "thermalizing..." << endl;
+    cout << "thermalizing...";
     n_therm = lattice.thermalize(n_therm);
+    cout << " done" << endl;
+    cout << "hmc time per config. = " << setprecision(4) << fixed << lattice.dt * lattice.n_steps * n_data << endl;
 
     init_db();
     write_parameters(&lattice);
@@ -78,19 +80,19 @@ int main(int argc, const char* argv[]) {
 
         su3_x_lattice wf_lattice = su3_x_lattice(&lattice);
 //        write_action(&wf_lattice, 0.0);
-//        write_wilson_loop(&wf_lattice, 0.0);
+        write_wilson_loop(&wf_lattice, 0.0);
         write_polyakov_loop(&wf_lattice, 0.0);
         for (double t = 0.02; t < (t_wf + 0.01); t += 0.02) {
             wf_lattice.wilson_flow(n5_center, 0.02);
 //            write_action(&wf_lattice, t);
-//            write_wilson_loop(&wf_lattice, t);
+            write_wilson_loop(&wf_lattice, t);
             write_polyakov_loop(&wf_lattice, t);
         }
 
         su3_x_lattice cool_lattice = su3_x_lattice(&lattice);
         write_topocharge(&cool_lattice, 0);
-        for (int n = 10; n <= n_cool; n += 10) {
-            cool_lattice.cool(n5_center, 10);
+        for (int n = 100; n <= n_cool; n += 100) {
+            cool_lattice.cool(n5_center, 100);
             write_topocharge(&cool_lattice, n);
         }
         cout << " done" << endl;
@@ -135,22 +137,22 @@ void init_db() {
 //        cerr << "sql error: " << zErrMsg << endl;
 //        sqlite3_free(zErrMsg);
 //    }
-//
-//    // create the wilson loop table if it doesn't exist
-//    ss.str("");
-//    ss << "CREATE TABLE IF NOT EXISTS wilson_loop (flow_t VARCHAR, plaq VARCHAR";
-//    for (int n = 1; n < N_half; n++) {
-//        ss << ", W_" << n << n << " VARCHAR";
-//        ss << ", W_" << n << (n + 1) << " VARCHAR";
-//    }
-//    ss << ", W_" << N_half << N_half << " VARCHAR)";
-//
-//    ret_code = sqlite3_exec(db, ss.str().c_str(), NULL, 0, &zErrMsg);
-//
-//    if(ret_code != SQLITE_OK) {
-//        fprintf(stderr, "SQL error: %s\n", zErrMsg);
-//        sqlite3_free(zErrMsg);
-//    }
+
+    // create the wilson loop table if it doesn't exist
+    ss.str("");
+    ss << "CREATE TABLE IF NOT EXISTS wilson_loop (flow_t VARCHAR, plaq VARCHAR";
+    for (int n = 1; n < N_half; n++) {
+        ss << ", W_" << n << n << " VARCHAR";
+        ss << ", W_" << n << (n + 1) << " VARCHAR";
+    }
+    ss << ", W_" << N_half << N_half << " VARCHAR)";
+
+    ret_code = sqlite3_exec(db, ss.str().c_str(), NULL, 0, &zErrMsg);
+
+    if(ret_code != SQLITE_OK) {
+        fprintf(stderr, "SQL error: %s\n", zErrMsg);
+        sqlite3_free(zErrMsg);
+    }
 
     // create the topological charge table if it doesn't exist
     ss.str("");

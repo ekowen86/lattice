@@ -242,9 +242,9 @@ double su3_x_site::hamiltonian() {
     // wilson action (including extra dimension)
     double S = 0.0;
     su3_link s;
-    int dMax = forward_edge ? lattice->D : (lattice->D + 1);
-    for (int d1 = 0; d1 < dMax; d1++) {
-        for (int d2 = d1 + 1; d2 < dMax; d2++) {
+    int d_max = forward_edge ? lattice->D : (lattice->D + 1);
+    for (int d1 = 0; d1 < d_max; d1++) {
+        for (int d2 = d1 + 1; d2 < d_max; d2++) {
             s = link[d1];
             s *= forward[d1]->link[d2];
             s *= forward[d2]->link_inverse[d1];
@@ -388,7 +388,12 @@ double su3_x_site::wilson_loop(int a, int b) {
     su3_link u;
     su3_x_site* s = this;
     int x;
-    for (int d1 = 0; d1 < lattice->D; d1++) {
+
+    // don't use the time direction on an asymmetric lattice
+    int d_min = (lattice->N == lattice->T) ? 0 : 1;
+    int n = 0; // number of measurements
+    
+    for (int d1 = d_min; d1 < lattice->D; d1++) {
         for (int d2 = d1 + 1; d2 < lattice->D; d2++) {
             u = su3_identity;
             for (x = 0; x < a; x++) {
@@ -408,9 +413,10 @@ double su3_x_site::wilson_loop(int a, int b) {
                 u *= s->link_inverse[d2];
             }
             U += u.trace().real() / 3.0;
+            n++;
         }
     }
-    return U / lattice->D / (lattice->D - 1) * 2.0;
+    return U / double(n);
 }
 
 complex<double> su3_x_site::polyakov_loop(int d) {
