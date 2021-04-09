@@ -2,3 +2,5 @@
 lattice.xcodeproj
 /su3_x/data
 /su3_x/plots
+fft
+*.o
