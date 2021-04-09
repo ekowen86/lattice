@@ -62,7 +62,7 @@ int main(int argc, const char* argv[]) {
     // create a lattice and thermalize it
     su3_x_lattice lattice = su3_x_lattice(N, T, N5, D, beta, eps5);
     lattice.parallel = true;
-    cout << "thermalizing...";
+    cout << "thermalizing..." << flush;
     n_therm = lattice.thermalize(n_therm);
     cout << " done" << endl;
     cout << "hmc time per config. = " << setprecision(4) << fixed << lattice.dt * lattice.n_steps * n_data << endl;
@@ -76,14 +76,14 @@ int main(int argc, const char* argv[]) {
 //        if (n != 0) lattice.heat_bath(n_sweeps);
         if (n != 0) lattice.hmc(n_sweeps);
 
-        cout << "writing configuration " << n << "...";
+        cout << "writing configuration " << n << "..." << flush;
 
         su3_x_lattice wf_lattice = su3_x_lattice(&lattice);
 //        write_action(&wf_lattice, 0.0);
         write_wilson_loop(&wf_lattice, 0.0);
         write_polyakov_loop(&wf_lattice, 0.0);
         for (double t = 0.02; t < (t_wf + 0.01); t += 0.02) {
-            wf_lattice.wilson_flow(n5_center, 0.02);
+            wf_lattice.wilson_flow(n5_center);
 //            write_action(&wf_lattice, t);
             write_wilson_loop(&wf_lattice, t);
             write_polyakov_loop(&wf_lattice, t);

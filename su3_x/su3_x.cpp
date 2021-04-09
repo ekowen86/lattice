@@ -21,9 +21,13 @@ using namespace std;
 void su3_x_site::init(su3_x_lattice* lattice, su3_x_site* lattice_sites, int s) {
     this->lattice = lattice;
     
-    gen = &lattice->gen[s / lattice->n_slice];
-    forward_edge = (s % lattice->N5) == (lattice->N5 - 1);
-    backward_edge = (s % lattice->N5) == 0;
+    int t = s / lattice->n_slice;
+    gen = &lattice->gen[t];
+    int n5 = s % lattice->N5;
+//    eps = 1.0 - abs(lattice->n5_center - n5) * lattice->eps5;
+    eps = 1.0;
+    forward_edge = n5 == (lattice->N5 - 1);
+    backward_edge = n5 == 0;
     reset_links(true);
     is_locked = false;
     
@@ -153,6 +157,50 @@ void su3_x_site::copy_links(su3_x_site* site) {
     link_inverse[lattice->D] = su3_identity;
 }
 
+void su3_x_site::read_links(ifstream& ckptFile, bool bigEndian) {
+    
+    for (int d = 0; d < lattice->D; d++) {
+        // read real and imaginary parts of SU(3) matrix (18 doubles)
+        double rawValues[18];
+        if (bigEndian) {
+            char bytes1[8];
+            char bytes2[8];
+            for (int i = 0; i < 18; i++) {
+                ckptFile.read(bytes1, 8);
+                // reverse byte order
+                for (int j = 0; j < 8; j++) {
+                    bytes2[j] = bytes1[7 - j];
+                }
+                memcpy((char*)(&rawValues[i]), bytes2, 8);
+            }
+        } else {
+            ckptFile.read((char*)rawValues, 18 * 8);
+        }
+        complex<double> u11(rawValues[0], rawValues[1]);
+        complex<double> u12(rawValues[2], rawValues[3]);
+        complex<double> u13(rawValues[4], rawValues[5]);
+        complex<double> u21(rawValues[6], rawValues[7]);
+        complex<double> u22(rawValues[8], rawValues[9]);
+        complex<double> u23(rawValues[10], rawValues[11]);
+        complex<double> u31(rawValues[12], rawValues[13]);
+        complex<double> u32(rawValues[14], rawValues[15]);
+        complex<double> u33(rawValues[16], rawValues[17]);
+        
+        su3_link U;
+        U << u11, u12, u13,
+             u21, u22, u23,
+             u31, u32, u33;
+        
+        // NERSC format stores lorentz indices backwards from how i do it
+//        set_link(lattice->D - d - 1, U);
+        set_link(d, U);
+    }
+
+    // always set the link in the extra dimension to the identity
+    link[lattice->D] = su3_identity;
+    link_inverse[lattice->D] = su3_identity;
+}
+
 void su3_x_site::set_link(int d, const su3_link& value) {
     // never change the link in the extra dimension
     if (d == lattice->D) return;
@@ -226,16 +274,18 @@ double su3_x_site::action() {
     // gauge action
     double S = 0.0;
     su3_link s;
-    for (int d1 = 0; d1 < lattice->D; d1++) {
+    double n = 0.0;
+    for (int d1 = 0; d1 < lattice->D - 1; d1++) {
         for (int d2 = d1 + 1; d2 < lattice->D; d2++) {
             s = link[d1];
             s *= forward[d1]->link[d2];
             s *= forward[d2]->link_inverse[d1];
             s *= link_inverse[d2];
-            S += (su3_identity - s).trace().real();
+            S += (su3_identity - s).trace().real() / 3.0;
+            n += 1.0;
         }
     }
-    return lattice->beta * S / 3.0;
+    return eps * lattice->beta * S / n;
 }
 
 double su3_x_site::hamiltonian() {
@@ -243,16 +293,16 @@ double su3_x_site::hamiltonian() {
     double S = 0.0;
     su3_link s;
     int d_max = forward_edge ? lattice->D : (lattice->D + 1);
-    for (int d1 = 0; d1 < d_max; d1++) {
+    for (int d1 = 0; d1 < d_max - 1; d1++) {
         for (int d2 = d1 + 1; d2 < d_max; d2++) {
             s = link[d1];
             s *= forward[d1]->link[d2];
             s *= forward[d2]->link_inverse[d1];
             s *= link_inverse[d2];
-            if (d2 < lattice->D) {
-                S += (su3_identity - s).trace().real();
-            } else {
+            if (d2 == lattice->D) {
                 S += (su3_identity - s).trace().real() * lattice->eps5;
+            } else {
+                S += (su3_identity - s).trace().real() * eps;
             }
         }
     }
@@ -282,12 +332,21 @@ void su3_x_site::hmc_step_link() {
 
 su3_link su3_x_site::p_link_dot(int d) {
 
-    su3_link A = staple(d);
+    su3_link A = staple(d) * eps + staple_x(d) * lattice->eps5;
     su3_link U = link[d];
     su3_link UA = U * A;
     su3_link AU_dag = A.adjoint() * U.adjoint();
     su3_link X = (UA - AU_dag) - (UA - AU_dag).trace() * su3_identity / 3.0;
     return -I * lattice->beta * X / 12.0;
+}
+
+double su3_x_site::link_trace() {
+    // compute the average link trace at this site
+    double Tr = 0;
+    for (int d1 = 0; d1 < lattice->D; d1++) {
+        Tr += link[d1].trace().real();
+    }
+    return Tr / lattice->D / 3.0;
 }
 
 double su3_x_site::plaq() {
@@ -336,22 +395,75 @@ su3_link su3_x_site::staple(int d1) {
         U += u;
     }
     
+    return U;
+}
+
+su3_link su3_x_site::reverse_staple(int d1) {
+    // compute the sum of staples attached to the plaquette pointing in the d1 direction
+    su3_link U = su3_zero;
+    su3_link u;
+    for (int d2 = 0; d2 < lattice->D; d2++) {
+        if (d1 == d2) continue;
+        
+        // forward staple
+        u = link[d2];
+        u *= forward[d2]->link[d1];
+        u *= forward[d1]->link_inverse[d2];
+        U += u;
+        
+        // backward staple
+        u = backward[d2]->link_inverse[d2];
+        u *= backward[d2]->link[d1];
+        u *= backward[d2]->forward[d1]->link[d2];
+        U += u;
+    }
+    
+    return U;
+}
+
+su3_link su3_x_site::staple_x(int d1) {
+    // compute the sum of extra dimension staples attached to the plaquette pointing in the d1 direction
+    su3_link U = su3_zero;
+//    su3_link u;
+    
     if (d1 == lattice->D) return U;
     
     if (!forward_edge) {
         // forward staple in extra dimension
-        u = forward[d1]->link[lattice->D];
-        u *= forward[lattice->D]->link_inverse[d1];
-        u *= link_inverse[lattice->D];
-        U += u * lattice->eps5;
+//        u = forward[d1]->link[lattice->D];
+//        u *= forward[lattice->D]->link_inverse[d1];
+//        u *= link_inverse[lattice->D];
+//        U += u;
+        U += forward[lattice->D]->link_inverse[d1];
     }
     
     if (!backward_edge) {
         // backward staple in extra dimension
-        u = backward[lattice->D]->forward[d1]->link_inverse[lattice->D];
-        u *= backward[lattice->D]->link_inverse[d1];
-        u *= backward[lattice->D]->link[lattice->D];
-        U += u * lattice->eps5;
+//        u = backward[lattice->D]->forward[d1]->link_inverse[lattice->D];
+//        u *= backward[lattice->D]->link_inverse[d1];
+//        u *= backward[lattice->D]->link[lattice->D];
+//        U += u;
+        U += backward[lattice->D]->link_inverse[d1];
+    }
+    
+    return U;
+}
+
+su3_link su3_x_site::reverse_staple_x(int d1) {
+    // compute the sum of extra dimension staples attached to the plaquette pointing in the d1 direction
+    su3_link U = su3_zero;
+//    su3_link u;
+    
+    if (d1 == lattice->D) return U;
+    
+    if (!forward_edge) {
+        // forward staple in extra dimension
+        U += forward[lattice->D]->link[d1];
+    }
+    
+    if (!backward_edge) {
+        // backward staple in extra dimension
+        U += backward[lattice->D]->link[d1];
     }
     
     return U;
@@ -444,6 +556,134 @@ double su3_x_site::correlator(int T) {
     }
     return u.trace().real() / 3;
 }
+
+double su3_x_site::field_strength() {
+
+    //            / +-->--+    +-->--+                          \
+    //           /  |     |    |     |         u3           u4   \
+    //           |  |     |    |     |                           |
+    // U = 1/4 * | (x)-<--+ +  +--<-(x)  +  +-->-(x)  + (x)->--+ |
+    //           |                          |     |      |     | |
+    //           \     u1         u2        |     |      |     | /
+    //            \                         +--<--+      +--<--+/
+    //
+    // F = (U - U^dag) / 2
+    // X = F - Tr(F) / 3
+    // E = -X * X / 4
+
+    double E = 0.0;
+    su3_link u1, u2, u3, u4;
+
+    for (int d1 = 0; d1 < lattice->D; d1++) {
+        for (int d2 = 0; d2 < lattice->D; d2++) {
+            if (d1 == d2) continue;
+            u1 = link[d2];
+            u1 *= forward[d2]->link[d1];
+            u1 *= forward[d1]->link_inverse[d2];
+            u1 *= link_inverse[d1];
+
+            u2 = backward[d1]->link_inverse[d1];
+            u2 *= backward[d1]->link[d2];
+            u2 *= backward[d1]->forward[d2]->link[d1];
+            u2 *= link_inverse[d2];
+
+            u3 = backward[d2]->link_inverse[d2];
+            u3 *= backward[d2]->backward[d1]->link_inverse[d1];
+            u3 *= backward[d2]->backward[d1]->link[d2];
+            u3 *= backward[d1]->link[d1];
+
+            u4 = link[d1];
+            u4 *= backward[d2]->forward[d1]->link_inverse[d2];
+            u4 *= backward[d2]->link_inverse[d1];
+            u4 *= backward[d2]->link[d2];
+
+            // this matches how grid does it, gives the same result
+//            u1 = link[d1];
+//            u1 *= forward[d1]->link[d2];
+//            u1 *= forward[d2]->link_inverse[d1];
+//            u1 *= link_inverse[d2];
+//
+//            u2 = link[d1];
+//            u2 *= backward[d2]->forward[d1]->link_inverse[d2];
+//            u2 *= backward[d2]->link_inverse[d1];
+//            u2 *= backward[d2]->link[d2];
+//
+//            u3 = backward[d2]->link_inverse[d2];
+//            u3 *= backward[d1]->backward[d2]->link_inverse[d1];
+//            u3 *= backward[d1]->backward[d2]->link[d2];
+//            u3 *= backward[d1]->link[d1];
+//
+//            u4 = link[d2];
+//            u4 *= backward[d1]->forward[d2]->link_inverse[d1];
+//            u4 *= backward[d1]->link_inverse[d2];
+//            u4 *= backward[d1]->link[d1];
+
+            su3_link U = (u1 + u2 + u3 + u4) / 4.0; // average of 4 plaquettes
+            su3_link F = (U - U.adjoint()) / 2.0; // make anti-hermitian
+            su3_link X = F - F.trace() * su3_identity / 3.0; // make traceless
+            E -= real((X * X).trace()) / 4.0; // add field strength
+        }
+    }
+
+    return E;
+}
+
+//double su3_x_site::field_strength_x() {
+//
+//    // same as field_strength(), but includes links in the extra dimension
+//
+//    double E = 0.0;
+//    su3_link u1, u2, u3, u4;
+//
+//    for (int d1 = 0; d1 < lattice->D; d1++) {
+//        for (int d2 = 0; d2 < lattice->D; d2++) {
+//            u1 = link[d1];
+//            u1 *= forward[d1]->link[d2];
+//            u1 *= forward[d2]->link_inverse[d1];
+//            u1 *= link_inverse[d2];
+//
+//            u2 = backward[d2]->link_inverse[d2];
+//            u2 *= backward[d2]->link[d1];
+//            u2 *= backward[d2]->forward[d1]->link[d2];
+//            u2 *= link_inverse[d1];
+//
+//            u3 = backward[d1]->link_inverse[d1];
+//            u3 *= backward[d1]->backward[d2]->link_inverse[d2];
+//            u3 *= backward[d1]->backward[d2]->link[d1];
+//            u3 *= backward[d2]->link[d2];
+//
+//            u4 = link[d2];
+//            u4 *= backward[d1]->forward[d2]->link_inverse[d1];
+//            u4 *= backward[d1]->link_inverse[d2];
+//            u4 *= backward[d1]->link[d1];
+//
+//            su3_link U = (u1 + u2 + u3 + u4) / 4.0;
+//            su3_link F = (U - U.adjoint()) / 2.0;
+//            E += -real((F * F).trace()) / 4.0;
+//        }
+//
+//        u1 = su3_zero;
+//        u2 = su3_zero;
+//        u3 = su3_zero;
+//        u4 = su3_zero;
+//
+//        if (!forward_edge) {
+//            u1 = link[d1] * forward[lattice->D]->link_inverse[d1];
+//            u2 = link_inverse[d1] * forward[lattice->D]->link[d1];
+//        }
+//
+//        if (!backward_edge) {
+//            u3 = link[d1] * forward[lattice->D]->link_inverse[d1];
+//            u4 = link_inverse[d1] * forward[lattice->D]->link[d1];
+//        }
+//
+//        su3_link U = (u1 + u2 + u3 + u4) * lattice->eps5 / 4.0;
+//        su3_link F = (U - U.adjoint()) / 2.0;
+//        E += -real((U * U).trace()) / 4.0;
+//    }
+//
+//    return E;
+//}
 
 int levi_civita_4[] = {
     0,1,2,3,+1,
@@ -718,27 +958,27 @@ double su3_x_site::heat_bath_link(int d1) {
         u = forward[d1]->link[d2];
         u *= forward[d2]->link_inverse[d1];
         u *= link_inverse[d2];
-        A += u;
+        A += u * eps;
 
         // backward staple
         u = backward[d2]->forward[d1]->link_inverse[d2];
         u *= backward[d2]->link_inverse[d1];
         u *= backward[d2]->link[d2];
-        A += u;
+        A += u * eps;
     }
     
     if (!forward_edge) {
         u = forward[d1]->link[lattice->D];
         u *= forward[lattice->D]->link_inverse[d1];
         u *= link_inverse[lattice->D];
-        A += u;
+        A += u * lattice->eps5;
     }
     
     if (!backward_edge) {
         u = backward[lattice->D]->forward[d1]->link_inverse[lattice->D];
         u *= backward[lattice->D]->link_inverse[d1];
         u *= backward[lattice->D]->link[lattice->D];
-        A += u;
+        A += u * lattice->eps5;
     }
     
     double dS = -lattice->beta * ((new_link - old_link) * A).trace().real() / 3.0;
@@ -779,52 +1019,84 @@ void su3_x_site::cool_link(int d1) {
     set_link(d1, X);
 }
 
-void su3_x_site::wilson_flow(su3_x_site* target, double epsilon) {
-    lock();
-    for (int d = 0; d < lattice->D; d++) wilson_flow_link(target, epsilon, d);
-    unlock();
+//void su3_x_site::wilson_flow(su3_x_site* target, double dtau) {
+//    lock();
+//    for (int d = 0; d < lattice->D; d++) wilson_flow_link(target, dtau, d);
+//    unlock();
+//}
+//
+//void su3_x_site::wilson_flow_link(su3_x_site* target, double dtau, int d1) {
+//    
+//    su3_link X;
+//    su3_link u1, u2, u3;
+//    for (int d2 = 0; d2 < lattice->D; d2++) {
+//        if (d1 == d2) continue;
+//        
+//        // forward staple
+//        u1 = link[d2];
+//        u2 = forward[d2]->link[d1];
+//        u3 = forward[d1]->link_inverse[d2];
+//        X += u1 * u2 * u3;
+//        
+//        // backward staple
+//        u1 = backward[d2]->link_inverse[d2];
+//        u2 = backward[d2]->link[d1];
+//        u3 = forward[d1]->backward[d2]->link[d2];
+//        X += u1 * u2 * u3;
+//    }
+//    X = X.adjoint().eval();
+//
+//    su3_link W0 = link[d1];
+//    su3_link Z0 = W0 * X;
+//    Z0 = (Z0.adjoint() - Z0).eval();
+//    Z0 = 0.5 * Z0 - Z0.trace() * su3_identity / 6.0;
+//
+//    su3_link W1 = cayley_ham(-I * 0.25 * Z0 * dtau) * W0;
+//    su3_link Z1 = W1 * X;
+//    Z1 = (Z1.adjoint() - Z1).eval();
+//    Z1 = 0.5 * Z1 - Z1.trace() * su3_identity / 6.0;
+//    Z1 = (8.0/9.0) * Z1 - (17.0/36.0) * Z0;
+//
+//    su3_link W2 = cayley_ham(-I * Z1 * dtau) * W1;
+//    su3_link Z2 = W2 * X;
+//    Z2 = (Z2.adjoint() - Z2).eval();
+//    Z2 = 0.5 * Z2 - Z2.trace() * su3_identity / 6.0;
+//    Z2 = 0.75 * Z2 - Z1;
+//
+//    su3_link W3 = cayley_ham(-I * Z2 * dtau) * W2;
+//    target->set_link(d1, W3);
+//}
+
+void su3_x_site::wilson_flow(su3_x_site* target, int step) {
+    target->lock();
+    for (int d = 0; d < lattice->D; d++) wilson_flow_link(target, step, d);
+    target->unlock();
 }
 
-void su3_x_site::wilson_flow_link(su3_x_site* target, double epsilon, int d1) {
+void su3_x_site::wilson_flow_link(su3_x_site* target, int step, int d) {
+
+//    // get z from reverse staple, including extra dimension
+//    su3_link x = reverse_staple(d) + reverse_staple_x(d) * lattice->eps5;
+
+    // get z from reverse staple, excluding extra dimension
+    su3_link x = reverse_staple(d);
+    x.adjointInPlace();
+    su3_link w = link[d];
+    su3_link z = w * x;
     
-    su3_link X = su3_zero;
-    su3_link u1, u2, u3;
-    for (int d2 = 0; d2 < lattice->D; d2++) {
-        if (d1 == d2) continue;
-        
-        // forward staple
-        u1 = link[d2];
-        u2 = forward[d2]->link[d1];
-        u3 = forward[d1]->link_inverse[d2];
-        X += u1 * u2 * u3;
-        
-        // backward staple
-        u1 = backward[d2]->link_inverse[d2];
-        u2 = backward[d2]->link[d1];
-        u3 = forward[d1]->backward[d2]->link[d2];
-        X += u1 * u2 * u3;
+    // get traceless, antihermitian part
+    z = (z - z.adjoint().eval()).eval() / 2.0;
+    z = z - z.trace() * su3_identity / 3.0;
+    
+    if (step == 1) {
+        z = z / 4.0;
+    } else if (step == 2) {
+        z = (8.0/9.0) * z - (17.0/9.0) * wf_z[d];
+    } else if (step == 3) {
+        z = (3.0/4.0) * z - wf_z[d];
     }
-    X = X.adjoint().eval();
-
-    su3_link W0 = link[d1];
-    su3_link Z0 = W0 * X;
-    Z0 = (Z0.adjoint() - Z0).eval();
-    Z0 = 0.5 * Z0 - Z0.trace() * su3_identity / 6.0;
-
-    su3_link W1 = cayley_ham(-I * 0.25 * Z0 * epsilon) * W0;
-    su3_link Z1 = W1 * X;
-    Z1 = (Z1.adjoint() - Z1).eval();
-    Z1 = 0.5 * Z1 - Z1.trace() * su3_identity / 6.0;
-    Z1 = (8.0/9.0) * Z1 - (17.0/36.0) * Z0;
-
-    su3_link W2 = cayley_ham(-I * Z1 * epsilon) * W1;
-    su3_link Z2 = W2 * X;
-    Z2 = (Z2.adjoint() - Z2).eval();
-    Z2 = 0.5 * Z2 - Z2.trace() * su3_identity / 6.0;
-    Z2 = 0.75 * Z2 - Z1;
-
-    su3_link W3 = cayley_ham(-I * Z2 * epsilon) * W2;
-    target->set_link(d1, W3);
+    target->wf_z[d] = z;
+    target->set_link(d, cayley_ham(I * lattice->wf_dt * z) * w);
 }
 
 void su3_x_site::stout_smear(su3_x_site* target, double rho) {
@@ -868,13 +1140,12 @@ su3_x_lattice::su3_x_lattice(int N, int T, int N5, int D, double beta, double ep
     this->eps5 = eps5;
     this->parallel = false;
     this->n_steps = 30;
-    this->dt = 0.01;
+    this->dt = 0.03333333;
     this->verbose = 0;
 
     init();
 
     for (int s = 0; s < n_sites; s++) site[s].reset_links(cold);
-
 }
 
 su3_x_lattice::su3_x_lattice(su3_x_lattice* lattice) {
@@ -894,6 +1165,124 @@ su3_x_lattice::su3_x_lattice(su3_x_lattice* lattice) {
     for (int s = 0; s < n_sites; s++) site[s].copy_links(&lattice->site[s]);
 }
 
+su3_x_lattice::su3_x_lattice(int N, int T, int N5, int D, double beta, double eps5, ifstream& ckptFile, bool isNersc) {
+    
+    this->N = N;
+    this->T = T;
+    this->N5 = N5;
+    this->D = D;
+    this->beta = beta;
+    this->eps5 = eps5;
+    this->parallel = false;
+    this->n_steps = 30;
+    this->dt = 0.03333333;
+    this->verbose = 0;
+
+    // read lattice data from a Grid checkpoint file
+    string line;
+    bool isHdr = true;
+    double hdrLinkTrace = 0.0;
+    double hdrPlaq = 0.0;
+    int checksum = 0;
+    bool bigEndian = false;
+
+    ckptFile.seekg(0);
+
+    if (isNersc) {
+        // read NERSC format header
+        while (isHdr) {
+            if (ckptFile.eof()) break;
+            
+            getline(ckptFile, line);
+
+            if (line.find("BEGIN_HEADER") == 0) {
+                // beginning of header
+                printf("Beginning of lattice data header found\n");
+                
+            } else if (line.find("DATATYPE") == 0) {
+                // data type, should be 4D_SU3_GAUGE_3x3 but i won't bother to check
+                printf("%s\n", line.c_str());
+                
+            } else if (line.find("DIMENSION_1") == 0) {
+                // i use this as the lattice size in the time dimension
+                int headerT;
+                sscanf(line.c_str(), "DIMENSION_1 = %d", &headerT);
+                if (headerT != T) printf("Lattice size mismatch, %d != %d\n", T, headerT);
+                
+            } else if (line.find("DIMENSION_2") == 0) {
+                // i use this as the lattice size in the spatial dimension
+                int headerN;
+                sscanf(line.c_str(), "DIMENSION_1 = %d", &headerN);
+                if (headerN != N) printf("Lattice size mismatch, %d != %d\n", N, headerN);
+                
+            } else if (line.find("DIMENSION") == 0) {
+                // ignore dimension 3 and 4
+
+            } else if (line.find("LINK_TRACE") == 0) {
+                // read link trace
+                sscanf(line.c_str(), "LINK_TRACE = %lf", &hdrLinkTrace);
+                printf("Link Trace (Header) = %lf\n", hdrLinkTrace);
+                
+            } else if (line.find("PLAQUETTE") == 0) {
+                // read average plaquette
+                sscanf(line.c_str(), "PLAQUETTE = %lf", &hdrPlaq);
+                printf("Plaquette (Header) = %lf\n", hdrPlaq);
+                
+            } else if (line.find("BOUNDARY") == 0) {
+                // boundaries should all be periodic
+                
+            } else if (line.find("CHECKSUM") == 0) {
+                // read the checksum
+                sscanf(line.c_str(), "CHECKSUM = %d", &checksum);
+                
+            } else if (line.find("FLOATING_POINT") == 0) {
+                // should be IEEE64BIG
+                printf("%s\n", line.c_str());
+                if (line.compare("IEEE64BIG") == 0) bigEndian = true;
+                
+            } else if (line.find("END_HEADER") == 0) {
+                // end of header
+                printf("End of lattice data header found\n");
+                isHdr = false;
+            }
+        }
+    }
+    
+    // initialize the lattice
+    init();
+
+    // read link values from file
+    su3_x_site* s = &site[0];
+    for (int n5 = 0; n5 < N5; n5++) {
+        for (int z = 0; z < N; z++) {
+            for (int y = 0; y < N; y++) {
+                for (int x = 0; x < N; x++) {
+                    for (int t = 0; t < T; t++) {
+                        s->read_links(ckptFile, bigEndian);
+                        s = s->forward[0];
+                    }
+                    s = s->forward[1];
+                }
+                s = s->forward[2];
+            }
+            s = s->forward[3];
+        }
+        s = s->forward[4];
+    }
+
+//    for (int n5 = 0; n5 < N5; n5++) {
+//        for (int s = n5; s < n_sites; s += N5) site[s].read_links(ckptFile, bigEndian);
+//    }
+
+//    for (int s = 0; s < n_sites; s++) site[s].read_links(ckptFile, bigEndian);
+    
+    // check average plaquette
+    printf("Link Trace (Calculated) = %lf\n", link_trace());
+    for (int n5 = 0; n5 < N5; n5++) {
+        printf("Plaquette(%d) = %lf\n", n5, plaq(n5) / 3.0);
+    }
+}
+
 su3_x_lattice::~su3_x_lattice() {
 }
 
@@ -903,6 +1292,9 @@ void su3_x_lattice::init() {
     z = 50;
     hmc_count = 0.0;
     hmc_accept = 0.0;
+    
+    // wilson flow time step
+    wf_dt = 0.02;
 
     // initialize pauli matrices
     sigma.resize(4);
@@ -932,11 +1324,11 @@ void su3_x_lattice::init() {
     n_slice = n_sites / T;
     n5_center = (N5 - 1) / 2;
     site.resize(n_sites);
-    hmc_site.resize(n_sites);
+    site_1.resize(n_sites);
 
     for (int s = 0; s < n_sites; s++) {
         site[s].init(this, site.data(), s);
-        hmc_site[s].init(this, hmc_site.data(), s);
+        site_1[s].init(this, site_1.data(), s);
     }
 }
 
@@ -960,38 +1352,39 @@ int su3_x_lattice::get_site(int s, int d, int n) {
     // get the site's coordinates
     int x[D + 1];
     x[0] = s / n_slice;
-    for (int d = 1; d < D; d++) x[d] = (s / (int)pow(N, D - d - 1) / N5) % N;
+    for (int d1 = 1; d1 < D; d1++) x[d1] = (s / (int)pow(N, D - d1 - 1) / N5) % N;
     x[D] = s % N5;
 
     // go n steps in the d direction
     if (d == 0) {
         // time direction
-        if (n > 0) {
-            x[0] = (x[0] + n) % T;
-        } else {
-            x[0] = (x[0] + n + T) % T;
-        }
+        x[0] += n;
+        while (x[0] < 0) x[0] += T;
+        x[0] %= T;
     } else if (d == D) {
         // extra direction
-        if (n > 0) {
-            x[d] = (x[d] + n) % N5;
-        } else {
-            x[d] = (x[d] + n + N5) % N5;
-        }
+        x[D] += n;
+        while (x[D] < 0) x[D] += N5;
+        x[D] %= N5;
     } else {
         // spatial direction
-        if (n > 0) {
-            x[d] = (x[d] + n) % N;
-        } else {
-            x[d] = (x[d] + n + N) % N;
-        }
+        x[d] += n;
+        while (x[d] < 0) x[d] += N;
+        x[d] %= N;
     }
 
     // get the index of the new site
     s = 0;
-    for (int d = 0; d < D; d++) s += x[d] * (int)pow(N, D - d - 1) * N5;
+    for (int d1 = 0; d1 < D; d1++) s += x[d1] * (int)pow(N, D - d1 - 1) * N5;
     s += x[D];
     return s;
+}
+
+double su3_x_lattice::link_trace() {
+    // compute the average link trace of the lattice (normalized to 1)
+    double P = 0;
+    for (int s = 0; s < n_sites; s++) P += site[s].link_trace();
+    return P / double(n_sites);
 }
 
 double su3_x_lattice::plaq(int n5) {
@@ -1074,7 +1467,7 @@ double su3_x_lattice::four_point(int T, int R, int n5) {
 
 double su3_x_lattice::hamiltonian() {
     double H = 0;
-    for (int s = 0; s < n_sites; s++) H += hmc_site[s].hamiltonian();
+    for (int s = 0; s < n_sites; s++) H += site_1[s].hamiltonian();
     return H;
 }
 
@@ -1098,15 +1491,15 @@ void su3_x_lattice::hmc(int n_sweeps, bool update_dt, bool no_metropolis) {
     }
     
     // copy lattice sites
-    for (int s = 0; s < n_sites; s++) hmc_site[s].copy_links(&site[s]);
+    for (int s = 0; s < n_sites; s++) site_1[s].copy_links(&site[s]);
 
     // init conjugate momenta
     if (parallel) {
         future<void> async_slice[T];
-        for (int t = 0; t < T; t++) async_slice[t] = async(async_init_momenta, &hmc_site[t * n_slice], n_slice);
+        for (int t = 0; t < T; t++) async_slice[t] = async(async_init_momenta, &site_1[t * n_slice], n_slice);
         for (int t = 0; t < T; t++) async_slice[t].get();
     } else {
-        for (int s = 0; s < n_sites; s++) hmc_site[s].init_momenta();
+        for (int s = 0; s < n_sites; s++) site_1[s].init_momenta();
     }
 
     // calculate old hamiltonian
@@ -1115,36 +1508,36 @@ void su3_x_lattice::hmc(int n_sweeps, bool update_dt, bool no_metropolis) {
     // do the initial half-step
     if (parallel) {
         future<void> async_slice[T];
-        for (int t = 0; t < T; t++) async_slice[t] = async(async_hmc_step_p, &hmc_site[t * n_slice], n_slice, 0.5);
+        for (int t = 0; t < T; t++) async_slice[t] = async(async_hmc_step_p, &site_1[t * n_slice], n_slice, 0.5);
         for (int t = 0; t < T; t++) async_slice[t].get();
     } else {
-        for (int s = 0; s < n_sites; s++) hmc_site[s].hmc_step_p(0.5);
+        for (int s = 0; s < n_sites; s++) site_1[s].hmc_step_p(0.5);
     }
 
     // do leapfrog steps
     for (int step = 0; step < (n_steps - 1); step++) {
         if (parallel) {
             future<void> async_slice[T];
-            for (int t = 0; t < T; t++) async_slice[t] = async(async_hmc_step_link, &hmc_site[t * n_slice], n_slice);
+            for (int t = 0; t < T; t++) async_slice[t] = async(async_hmc_step_link, &site_1[t * n_slice], n_slice);
             for (int t = 0; t < T; t++) async_slice[t].get();
-            for (int t = 0; t < T; t++) async_slice[t] = async(async_hmc_step_p, &hmc_site[t * n_slice], n_slice, 1.0);
+            for (int t = 0; t < T; t++) async_slice[t] = async(async_hmc_step_p, &site_1[t * n_slice], n_slice, 1.0);
             for (int t = 0; t < T; t++) async_slice[t].get();
         } else {
-            for (int s = 0; s < n_sites; s++) hmc_site[s].hmc_step_link();
-            for (int s = 0; s < n_sites; s++) hmc_site[s].hmc_step_p(1.0);
+            for (int s = 0; s < n_sites; s++) site_1[s].hmc_step_link();
+            for (int s = 0; s < n_sites; s++) site_1[s].hmc_step_p(1.0);
         }
     }
 
     // do the final half-step
     if (parallel) {
         future<void> async_slice[T];
-        for (int t = 0; t < T; t++) async_slice[t] = async(async_hmc_step_link, &hmc_site[t * n_slice], n_slice);
+        for (int t = 0; t < T; t++) async_slice[t] = async(async_hmc_step_link, &site_1[t * n_slice], n_slice);
         for (int t = 0; t < T; t++) async_slice[t].get();
-        for (int t = 0; t < T; t++) async_slice[t] = async(async_hmc_step_p, &hmc_site[t * n_slice], n_slice, 0.5);
+        for (int t = 0; t < T; t++) async_slice[t] = async(async_hmc_step_p, &site_1[t * n_slice], n_slice, 0.5);
         for (int t = 0; t < T; t++) async_slice[t].get();
     } else {
-        for (int s = 0; s < n_sites; s++) hmc_site[s].hmc_step_link();
-        for (int s = 0; s < n_sites; s++) hmc_site[s].hmc_step_p(0.5);
+        for (int s = 0; s < n_sites; s++) site_1[s].hmc_step_link();
+        for (int s = 0; s < n_sites; s++) site_1[s].hmc_step_p(0.5);
     }
 
     // calculate new hamiltonian
@@ -1159,33 +1552,33 @@ void su3_x_lattice::hmc(int n_sweeps, bool update_dt, bool no_metropolis) {
     }
     
     if (accept || no_metropolis) {
-        for (int s = 0; s < n_sites; s++) site[s].copy_links(&hmc_site[s]);
+        for (int s = 0; s < n_sites; s++) site[s].copy_links(&site_1[s]);
     }
     
     hmc_count++;
-    if (hmc_count >= 20) {
-        // update hmc statistics every 20 iterations
-        double accept_rate = double(hmc_accept) / double(hmc_count);
-        hmc_count = 0;
-        hmc_accept = 0;
-        
-        // target a 70%-90% acceptance rate
-        if (update_dt) {
-            if (accept_rate > 0.91) {
-                dt *= 1.1;
-            } else if (accept_rate < 0.35) {
-                dt *= 0.5;
-            } else if (accept_rate < 0.69) {
-                dt *= 0.9;
-            }
-        }
-        if (verbose) {
-            cout << setprecision(6) << fixed;
-            cout << "accept_rate = " << accept_rate;
-            cout << ", dt = " << dt;
-            cout << ", plaq = " << plaq(n5_center) << endl;
-        }
-    }
+//    if (hmc_count >= 20) {
+//        // update hmc statistics every 20 iterations
+//        double accept_rate = double(hmc_accept) / double(hmc_count);
+//        hmc_count = 0;
+//        hmc_accept = 0;
+//        
+//        // target a 70%-90% acceptance rate
+//        if (update_dt) {
+//            if (accept_rate > 0.91) {
+//                dt *= 1.1;
+//            } else if (accept_rate < 0.35) {
+//                dt *= 0.5;
+//            } else if (accept_rate < 0.69) {
+//                dt *= 0.9;
+//            }
+//        }
+//        if (verbose) {
+//            cout << setprecision(6) << fixed;
+//            cout << "accept_rate: " << accept_rate;
+//            cout << ", dt: " << dt;
+//            cout << ", plaq: " << plaq(n5_center) << endl;
+//        }
+//    }
 }
 
 double async_heat_bath(su3_x_site* site, int n) {
@@ -1222,7 +1615,7 @@ void su3_x_lattice::heat_bath(int n_sweeps) {
 
     if (verbose) {
         cout << setprecision(6);
-        cout << "plaq = " << plaq(n5_center) << endl;
+        cout << "plaq: " << plaq(n5_center) << endl;
     }
 
     if (accept < 0.78) {
@@ -1254,26 +1647,60 @@ void su3_x_lattice::cool(int n5, int n_sweeps) {
     }
 }
 
-void async_wilson_flow(su3_x_site* site, su3_x_site* target, int n, int N5, double epsilon) {
-    for (int s = 0; s < n; s += N5) site[s].wilson_flow(&target[s], epsilon);
+//void async_wilson_flow(su3_x_site* site, su3_x_site* target, int n, int step) {
+//    for (int s = 0; s < n; s++) site[s].wilson_flow(&target[s], step);
+//}
+//
+//void su3_x_lattice::wilson_flow(int n_sweeps) {
+//    if (n_sweeps) {
+//        for (int i = 0; i < n_sweeps; i++) wilson_flow();
+//        return;
+//    }
+//
+//    if (parallel) {
+//        future<void> async_slice[T];
+//        for (int t = 0; t < T; t++) async_slice[t] = async(async_wilson_flow, &site[t * n_slice], &site_1[t * n_slice], n_slice, 1);
+//        for (int t = 0; t < T; t++) async_slice[t].get();
+//        for (int t = 0; t < T; t++) async_slice[t] = async(async_wilson_flow, &site_1[t * n_slice], &site[t * n_slice], n_slice, 2);
+//        for (int t = 0; t < T; t++) async_slice[t].get();
+//        for (int t = 0; t < T; t++) async_slice[t] = async(async_wilson_flow, &site[t * n_slice], &site_1[t * n_slice], n_slice, 3);
+//        for (int t = 0; t < T; t++) async_slice[t].get();
+//    } else {
+//        for (int s = 0; s < n_sites; s++) site[s].wilson_flow(&site_1[s], 1);
+//        for (int s = 0; s < n_sites; s++) site_1[s].wilson_flow(&site[s], 2);
+//        for (int s = 0; s < n_sites; s++) site[s].wilson_flow(&site_1[s], 3);
+//    }
+//
+//    // copy lattice sites
+//    for (int s = 0; s < n_sites; s++) site[s].copy_links(&site_1[s]);
+//}
+
+void async_wilson_flow(su3_x_site* site, su3_x_site* target, int n, int N5, int step) {
+    for (int s = 0; s < n; s += N5) site[s].wilson_flow(&target[s], step);
 }
 
-void su3_x_lattice::wilson_flow(int n5, double epsilon, int n_sweeps) {
+void su3_x_lattice::wilson_flow(int n5, int n_sweeps) {
     if (n_sweeps) {
-        for (int i = 0; i < n_sweeps; i++) wilson_flow(n5, epsilon, 0);
+        for (int i = 0; i < n_sweeps; i++) wilson_flow(n5, 0);
         return;
     }
-    
+
     if (parallel) {
         future<void> async_slice[T];
-        for (int t = 0; t < T; t++) async_slice[t] = async(async_wilson_flow, &site[t * n_slice + n5], &hmc_site[t * n_slice + n5], n_slice, N5, epsilon);
+        for (int t = 0; t < T; t++) async_slice[t] = async(async_wilson_flow, &site[t * n_slice + n5], &site_1[t * n_slice + n5], n_slice, N5, 1);
+        for (int t = 0; t < T; t++) async_slice[t].get();
+        for (int t = 0; t < T; t++) async_slice[t] = async(async_wilson_flow, &site_1[t * n_slice + n5], &site[t * n_slice + n5], n_slice, N5, 2);
+        for (int t = 0; t < T; t++) async_slice[t].get();
+        for (int t = 0; t < T; t++) async_slice[t] = async(async_wilson_flow, &site[t * n_slice + n5], &site_1[t * n_slice + n5], n_slice, N5, 3);
         for (int t = 0; t < T; t++) async_slice[t].get();
     } else {
-        for (int s = n5; s < n_sites; s += N5) site[s].wilson_flow(&hmc_site[s], epsilon);
+        for (int s = n5; s < n_sites; s += N5) site[s].wilson_flow(&site_1[s], 1);
+        for (int s = n5; s < n_sites; s += N5) site_1[s].wilson_flow(&site[s], 2);
+        for (int s = n5; s < n_sites; s += N5) site[s].wilson_flow(&site_1[s], 3);
     }
 
     // copy lattice sites
-    for (int s = 0; s < n_sites; s++) site[s].copy_links(&hmc_site[s]);
+    for (int s = 0; s < n_sites; s++) site[s].copy_links(&site_1[s]);
 }
 
 void async_stout_smear(su3_x_site* site, su3_x_site* target, int n, int N5, double rho) {
@@ -1288,19 +1715,79 @@ void su3_x_lattice::stout_smear(int n5, double rho, int n_sweeps) {
     
     if (parallel) {
         future<void> async_slice[T];
-        for (int t = 0; t < T; t++) async_slice[t] = async(async_stout_smear, &site[t * n_slice + n5], &hmc_site[t * n_slice + n5], n_slice, N5, rho);
+        for (int t = 0; t < T; t++) async_slice[t] = async(async_stout_smear, &site[t * n_slice + n5], &site_1[t * n_slice + n5], n_slice, N5, rho);
         for (int t = 0; t < T; t++) async_slice[t].get();
     } else {
-        for (int s = n5; s < n_sites; s += N5) site[s].stout_smear(&hmc_site[s], rho);
+        for (int s = n5; s < n_sites; s += N5) site[s].stout_smear(&site_1[s], rho);
     }
 
     // copy lattice sites
-    for (int s = 0; s < n_sites; s++) site[s].copy_links(&hmc_site[s]);
+    for (int s = 0; s < n_sites; s++) site[s].copy_links(&site_1[s]);
 }
 
-double async_topological_charge(su3_x_site* site, int n, int n5) {
+double async_field_strength(su3_x_site* site, int n, int N5) {
+    double E = 0.0;
+    for (int s = 0; s < n; s += N5) E += site[s].field_strength();
+    return E;
+}
+
+double su3_x_lattice::field_strength(int n5) {
+    double E = 0.0;
+
+    if (parallel) {
+        future<double> sweep_slice[T];
+        for (int t = 0; t < T; t++) sweep_slice[t] = async(async_field_strength, &site[t * n_slice + n5], n_slice, N5);
+        for (int t = 0; t < T; t++) E += sweep_slice[t].get();
+
+    } else {
+        for (int s = n5; s < n_sites; s += N5) E += site[s].field_strength();
+    }
+    return E / double(n_sites_5);
+}
+
+//double async_field_strength_x(su3_x_site* site, int n) {
+//    double E = 0.0;
+//    for (int s = 0; s < n; s++) E += site[s].field_strength_x();
+//    return E;
+//}
+//
+//double su3_x_lattice::field_strength_x(int n5) {
+//    double E = 0.0;
+//
+//    if (parallel) {
+//        future<double> sweep_slice[T];
+//        for (int t = 0; t < T; t++) sweep_slice[t] = async(async_field_strength_x, &site[t * n_slice], n_slice);
+//        for (int t = 0; t < T; t++) E += sweep_slice[t].get();
+//
+//    } else {
+//        for (int s = n5; s < n_sites; s++) E += site[s].field_strength_x();
+//    }
+//    return E / double(n_sites);
+//}
+
+//double async_field_strength_x(su3_x_site* site, int n, int N5) {
+//    double E = 0.0;
+//    for (int s = 0; s < n; s += N5) E += site[s].field_strength_x();
+//    return E;
+//}
+//
+//double su3_x_lattice::field_strength_x(int n5) {
+//    double E = 0.0;
+//
+//    if (parallel) {
+//        future<double> sweep_slice[T];
+//        for (int t = 0; t < T; t++) sweep_slice[t] = async(async_field_strength_x, &site[t * n_slice + n5], n_slice, N5);
+//        for (int t = 0; t < T; t++) E += sweep_slice[t].get();
+//
+//    } else {
+//        for (int s = n5; s < n_sites; s += N5) E += site[s].field_strength_x();
+//    }
+//    return E / double(n_sites_5);
+//}
+
+double async_topological_charge(su3_x_site* site, int n, int N5) {
     double Q = 0.0;
-    for (int s = 0; s < n; s += n5) Q += site[s].topological_charge();
+    for (int s = 0; s < n; s += N5) Q += site[s].topological_charge();
     return Q;
 }
 
@@ -1326,9 +1813,17 @@ int su3_x_lattice::thermalize(int n_min, int n_max) {
     coldStart.verbose = verbose;
     double hot_plaquette = plaq(n5_center);
     double cold_plaquette = coldStart.plaq(n5_center);
-//    cout << "P_hot = ";
-//    for (int n = 0; n < N5; n++) cout << plaq(n) << ", ";
-//    cout << "P_cold = " << cold_plaquette << endl;
+    if (verbose) {
+        cout << "P_hot: ";
+        for (int n = 0; n < N5; n++) cout << plaq(n) << " ";
+        cout << "P_cold: " << cold_plaquette << endl;
+        cout << "S_hot: ";
+        for (int n = 0; n < N5; n++) cout << action(n) << " ";
+        cout << "S_cold: " << coldStart.action(n5_center) << endl;
+        cout << "E_hot: ";
+        for (int n = 0; n < N5; n++) cout << field_strength(n) << " ";
+        cout << "E_cold: " << coldStart.field_strength(n5_center) << endl;
+    }
     int m;
     for (m = 0; hot_plaquette < cold_plaquette; m++) {
         // sweep both models until the average plaquette reaches the same value
@@ -1338,23 +1833,25 @@ int su3_x_lattice::thermalize(int n_min, int n_max) {
         coldStart.hmc(0, true, true);
         hot_plaquette = plaq(n5_center);
         cold_plaquette = coldStart.plaq(n5_center);
-//        cout << "dP = " << abs(cold_plaquette - hot_plaquette) << ", P_hot = ";
-//        for (int n = 0; n < N5; n++) cout << plaq(n) << ", ";
-//        cout << "P_cold = " << cold_plaquette << endl;
+        if (verbose) {
+            cout << "dP: " << abs(cold_plaquette - hot_plaquette) << " P_hot: ";
+            for (int n = 0; n < N5; n++) cout << plaq(n) << " ";
+            cout << "P_cold: " << cold_plaquette << endl;
+        }
 //        if (n_max && (m > n_max)) break;
     }
     
     // sweep a few more times
     if (verbose) {
-        cout << "hot_plaquette = " << hot_plaquette;
-        cout << ", cold_plaquette = " << cold_plaquette << endl;
+        cout << "hot_plaquette: " << hot_plaquette;
+        cout << " cold_plaquette: " << cold_plaquette << endl;
     }
     int n_therm = max(n_min, m * 2);
 //    heat_bath(n_therm - m);
     hmc(n_therm - m, true, false);
 
     // return value is total number of sweeps
-    if (verbose) cout << "n_therm = " << n_therm << endl;
+    if (verbose) cout << "n_therm: " << n_therm << endl;
     return n_therm;
 }
 
@@ -1447,8 +1944,8 @@ long double su3_x_lattice::relax(long double error_target, bool coulomb, int n5)
                 avg_link_slice = 0.0;
                 for (int s = s1; s < s2; s++) avg_link_slice += site[s].sum_coulomb();
                 avg_link_slice /= n_slice;
-//                cout << "avg_link = " << avg_link_slice << ", ";
-//                cout << "theta = " << th << endl;
+//                cout << "avg_link: " << avg_link_slice << ", ";
+//                cout << "theta: " << th << endl;
             }
             avg_link += avg_link_slice;
         }
@@ -1469,9 +1966,9 @@ long double su3_x_lattice::relax(long double error_target, bool coulomb, int n5)
                 for (int s = 0; s < n_sites; s++) avg_link += site[s].sum_landau();
             }
             avg_link /= n_sites;
-//            cout << "avg_link = " << avg_link << ", ";
-//            cout << "theta = " << th << ", ";
-//            cout << "plaq = " << plaq() << endl;
+//            cout << "avg_link: " << avg_link << ", ";
+//            cout << "theta: " << th << ", ";
+//            cout << "plaq: " << plaq() << endl;
         }
         return avg_link;
     }

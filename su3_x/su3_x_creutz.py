@@ -9,11 +9,11 @@ import warnings
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-id = "16_1_5700"
-L = int(16) # lattice size
+id = "4_1_5900"
+L = int(4) # lattice size
 R_half = int(L / 2) # half lattice size
-R_min = 2 # min R value for fit
-R_max = 7 # max R value for fit
+R_min = 1 # min R value for fit
+R_max = 1 # max R value for fit
 
 def creutz_ratio(w00, w01, w11):
 	w00_bar = np.mean(w00)
@@ -81,14 +81,23 @@ for r in range(0, R_half - 1):
 	# get W(R,R)
 	cursor.execute("SELECT W_%d%d FROM wilson_loop WHERE flow_t='%.04f'" % (r+1, r+1, T))
 	w00 = collapse_row(cursor.fetchall())
+	###
+# 	w00 = w00[100:200]
+	###
 	
 	# get W(R+1,R)
 	cursor.execute("SELECT W_%d%d FROM wilson_loop WHERE flow_t='%.04f'" % (r+1, r+2, T))
 	w01 = collapse_row(cursor.fetchall())
+	###
+# 	w01 = w01[100:200]
+	###
 	
 	# get W(R+1,R+1)
 	cursor.execute("SELECT W_%d%d FROM wilson_loop WHERE flow_t='%.04f'" % (r+2, r+2, T))
 	w11 = collapse_row(cursor.fetchall())
+	###
+# 	w11 = w11[100:200]
+	###
 
 	# calculate Creutz ratio
 	chi[r], d_chi[r] = jackknife_creutz(w00, w01, w11, 20)

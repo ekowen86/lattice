@@ -26,19 +26,19 @@ using namespace std;
 
 int main(int argc, const char* argv[]) {
 
-    int N = atoi(argv[1]); cout << "N = " << N << ", ";
-    int T = atoi(argv[2]); cout << "T = " << T << ", ";
-    int N5 = atoi(argv[3]); cout << "N5 = " << N5 << ", ";
-    int D = atoi(argv[4]); cout << "D = " << D << endl;
+    int N = atoi(argv[1]); cout << "N: " << N << " ";
+    int T = atoi(argv[2]); cout << "T: " << T << " ";
+    int N5 = atoi(argv[3]); cout << "N5: " << N5 << " ";
+    int D = atoi(argv[4]); cout << "D: " << D << endl;
     
     cout << setprecision(4) << fixed;
-    double beta_start = stod(argv[5]); cout << "beta_start = " << beta_start << ", ";
-    double beta_stop = stod(argv[6]); cout << "beta_stop = " << beta_stop << ", ";
-    double beta_inc = stod(argv[7]); cout << "beta_inc = " << beta_inc << ", ";
-    double eps5 = stod(argv[8]); cout << "eps5 = " << eps5 << endl;
+    double beta_start = stod(argv[5]); cout << "beta_start: " << beta_start << " ";
+    double beta_stop = stod(argv[6]); cout << "beta_stop: " << beta_stop << " ";
+    double beta_inc = stod(argv[7]); cout << "beta_inc: " << beta_inc << " ";
+    double eps5 = stod(argv[8]); cout << "eps5: " << eps5 << endl;
     
-    int n_sweeps = atoi(argv[9]); cout << "n_sweeps = " << n_sweeps << ", ";
-    int n_data = atoi(argv[10]); cout << "n_data = " << n_data << endl;
+    int n_sweeps = atoi(argv[9]); cout << "n_sweeps: " << n_sweeps << " ";
+    int n_data = atoi(argv[10]); cout << "n_data: " << n_data << endl;
     
     cout << thread::hardware_concurrency() << " parallel cores available" << endl;
 
@@ -48,24 +48,29 @@ int main(int argc, const char* argv[]) {
 
     double plaq, plaq_sum;
     for (double beta = beta_start; beta <= beta_stop; beta += beta_inc) {
+        cout << setprecision(4) << fixed;
+        cout << "beta: " << beta << endl;
         lattice.verbose = 1;
         lattice.beta = beta;
         lattice.thermalize();
         lattice.verbose = 0;
         plaq_sum = 0.0;
+        cout << setprecision(6) << fixed;
         for (int n = 0; n < n_data; n++) {
-            plaq = lattice.plaq(lattice.n5_center);
+            printf("%d", n);
+            for (int n5 = 0; n5 < N5; n5++) {
+                printf(" %e", lattice.plaq(n5) / 3.0);
+            }
+            printf("\n");
+            plaq = lattice.plaq(lattice.n5_center) / 3.0;
             plaq_sum += plaq;
-            cout << setprecision(6) << fixed;
-            cout << plaq << endl;
 //            lattice.heat_bath(n_sweeps);
             lattice.hmc(n_sweeps);
         }
-        cout << setprecision(4) << fixed;
-        cout << "beta = " << beta;
         cout << setprecision(6) << fixed;
-        cout << ", plaq = " << plaq_sum / double(n_data);
-        cout << ", E = " << (1.0 - plaq_sum / double(n_data) / 3.0) << endl;
+        double plaq_avg = plaq_sum / double(n_data);
+        cout << "plaq: " << plaq_avg;
+        cout << " E: " << (1.0 - plaq_avg) << endl;
     }
 
     return 0;

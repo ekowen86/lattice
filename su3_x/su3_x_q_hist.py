@@ -2,7 +2,7 @@ import sqlite3
 import numpy as np
 import matplotlib.pyplot as plt
 
-id = "16_1_6300"
+id = "16_5_6000_500"
 L = int(16) # lattice size
 T = int(16) # lattice size (time direction)
 
@@ -10,7 +10,7 @@ def jackknife_mean(data, n_sub):
 	f_sub = float(n_sub) # number of data subsets
 	start = 0 # start of current block of data
 	count = len(data) # number of data points
-	size = count / n_sub # size of each block
+	size = int(count / n_sub) # size of each block
 	
 	a_bar = np.mean(data)
 	d_a = 0.0
@@ -42,6 +42,9 @@ def row2float(row):
 	return float(row[0])
 
 Q = np.array(map(row2float, rows))
+###
+# Q = Q[100:200]
+###
 absQ = np.abs(Q)
 Q2 = Q * Q
 

@@ -42,7 +42,9 @@ public:
     bool forward_edge; // site is at the forward edge of the extra dimension
     bool backward_edge; // site is at the backward edge of the extra dimension
     bool is_locked;
-    
+    double eps;
+    su3_link wf_z[D_MAX]; // exponent for wilson flow
+
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     
     // methods
@@ -56,6 +58,7 @@ public:
     double rand_normal(double mean = 0.0, double stdev = 1.0);
     void reset_links(bool cold);
     void copy_links(su3_x_site* site);
+    void read_links(std::ifstream& ckptFile, bool bigEndian);
     void set_link(int d, const su3_link& value);
     void init_momenta();
     su2_link create_su2(bool random);
@@ -65,13 +68,19 @@ public:
     void hmc_step_p(double frac);
     void hmc_step_link();
     su3_link p_link_dot(int d);
+    double link_trace();
     double plaq();
     su3_link plaquette(int d1, int d2);
     su3_link staple(int d1);
+    su3_link reverse_staple(int d1);
+    su3_link staple_x(int d1);
+    su3_link reverse_staple_x(int d1);
     su3_link cloverleaf(int d1, int d2);
     double wilson_loop(int a, int b);
     std::complex<double> polyakov_loop(int r);
     double correlator(int T);
+    double field_strength();
+//    double field_strength_x();
     double topological_charge();
     double mag_U();
     double abs_U();
@@ -85,8 +94,8 @@ public:
     double heat_bath_link(int d1);
     void cool();
     void cool_link(int d1);
-    void wilson_flow(su3_x_site* target, double epsilon);
-    void wilson_flow_link(su3_x_site* target, double epsilon, int d1);
+    void wilson_flow(su3_x_site* target, int step);
+    void wilson_flow_link(su3_x_site* target, int step, int d);
     void stout_smear(su3_x_site* target, double rho);
     void stout_smear_link(su3_x_site* target, double rho, int d1);
 };
@@ -115,21 +124,26 @@ public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
     // hmc
-    std::vector<su3_x_site> hmc_site; // site values for hmc
+    std::vector<su3_x_site> site_1; // site values for hmc
     double dt; // hmc step size
     int n_steps; // hmc step count
     int hmc_accept; // number of accepted hmc configurations
     int hmc_count; // number of attempted hmc configurations
 
+    // time step for wilson flow algorithm
+    double wf_dt;
+    
     // methods
     su3_x_lattice(int N, int T, int N5, int D, double beta, double eps5, bool cold = false);
     su3_x_lattice(su3_x_lattice* lattice);
+    su3_x_lattice(int N, int T, int N5, int D, double beta, double eps5, std::ifstream& ckptFile, bool isNersc = false);
     ~su3_x_lattice();
     void init();
     double rand_double(double min = 0.0, double max = 1.0);
     int rand_int(int min, int max);
     double rand_normal(double mean = 0.0, double stdev = 1.0);
     int get_site(int s, int d, int n);
+    double link_trace();
     double plaq(int n5);
     double action(int n5);
     double wilson_loop(int a, int b, int n5);
@@ -140,8 +154,11 @@ public:
     void hmc(int n_sweeps = 0, bool update_dt = false, bool no_metropolis = false);
     void heat_bath(int n_sweeps = 0);
     void cool(int n5, int n_sweeps = 0);
-    void wilson_flow(int n5, double epsilon = 0.02, int n_sweeps = 0);
+//    void wilson_flow(int n_sweeps = 0);
+    void wilson_flow(int n5, int n_sweeps = 0);
     void stout_smear(int n5, double rho = 0.1, int n_sweeps = 0);
+    double field_strength(int n5);
+//    double field_strength_x(int n5);
     double topological_charge(int n5);
     int thermalize(int n_min = 0, int n_max = 0);
     double ave_link_t(int n5);
